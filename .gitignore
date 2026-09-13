@@ -1,0 +1,43 @@
+# Byte-compiled / caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ipynb_checkpoints/
+
+# Environments
+.venv/
+venv/
+env/
+
+# Data — never commit raw provider data (see docs/data_sources.md for licensing)
+data/raw/*
+!data/raw/README.md
+data/interim/
+data/processed/
+data/external/
+*.parquet
+*.feather
+!data/**/.gitkeep
+
+# Results are NOT tracked. Everything under results/ is regenerable in minutes
+# by `bash scripts/run_all.sh`, and the default source is the simulator. Keeping
+# simulated outputs in version control invites them to be mistaken for findings,
+# which is the one thing this project must not allow.
+results/*
+!results/README.md
+*.pkl
+*.joblib
+*.pt
+*.ckpt
+
+# Experiment tracking
+mlruns/
+wandb/
+lightning_logs/
+
+# OS / editor
+.DS_Store
+*.swp
+.idea/
+.vscode/
