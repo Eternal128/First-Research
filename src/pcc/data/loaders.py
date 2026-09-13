@@ -84,36 +84,63 @@ def load_simulated(**kwargs) -> tuple[list[ArrivalFrame], pd.DataFrame]:
 # Provider scaffolds
 # ---------------------------------------------------------------------------
 def load_metrica(
-    root: str | Path, *, config: PreprocessConfig | None = None, match_ids: list[str] | None = None
+    root: str | Path,
+    *,
+    config: PreprocessConfig | None = None,
+    match_ids: list[str] | None = None,
+    label_config=None,
+    competition: str = "Metrica-Sample",
+    **tracking_kwargs,
 ) -> tuple[list[ArrivalFrame], pd.DataFrame]:
-    """Metrica Sports sample data.
+    """Metrica Sports sample data. **Implemented and verified against the files.**
 
-    TODO(access): confirm against the real files before relying on any of this.
-      1. Which matches are in the normalised CSV layout and which are in the
-         EPTS/FIFA format - they need different deserialisers.
-      2. Coordinate convention and origin, and whether the y-axis is inverted.
-      3. Frame rate per match (do not assume it is uniform across matches).
-      4. Whether a frame-level possession label exists. If not, outcomes must be
-         derived from touch events and ``LabelConfig.definition`` set to
-         ``first_touch`` with the substitution documented per match.
-      5. Whether ball z-coordinate is present; without it, aerial and ground
-         arrivals cannot be separated and ``pass_height`` stays ``unknown``.
+    See :mod:`pcc.data.metrica` for what was checked and what it implies. The
+    three findings that matter for the study design:
 
-    Implementation sketch (kloppy)::
+    * Tracking and events are already synchronised, so the clock-offset step is
+      a no-op here. This removes one of the pipeline's larger error sources.
+    * There is **no frame-level possession label**; the outcome is derived from
+      the event stream, and every row records that in ``provider``.
+    * Only the two CSV-format matches are read. Game 3 is in the EPTS/FIFA
+      format and needs a different deserialiser, so the corpus is two matches -
+      two clusters - which is far too few for the cluster bootstrap to support
+      inference. Metrica is a development corpus, exactly as the proposal
+      anticipated, not a primary one.
 
-        from kloppy import metrica
-        ds = metrica.load_tracking_csv(home_data=..., away_data=...)
-        events = metrica.load_event_csv(...)
-
-    then feed both to :func:`build_arrivals`.
+    Parameters
+    ----------
+    root
+        Path to the cloned ``metrica-sports/sample-data`` repository.
+    match_ids
+        Optional subset of game directory names, e.g. ``["Sample_Game_1"]``.
     """
+    from pcc.data.metrica import available_games, load_match
+
     root = Path(root)
     if not root.exists():
         raise _not_available("metrica_sample", root)
-    raise NotImplementedError(
-        "load_metrica is a scaffold. Complete it against the real files following the "
-        "TODO(access) checklist in its docstring, then remove this guard."
-    )
+
+    games = available_games(root)
+    if match_ids is not None:
+        wanted = set(match_ids)
+        games = [g for g in games if g.name in wanted]
+    if not games:
+        raise _not_available("metrica_sample", root)
+
+    if config is not None:
+        tracking_kwargs.setdefault("velocity_window_s", config.smoothing_window_s)
+        tracking_kwargs.setdefault("max_gap_s", config.max_occlusion_gap_s)
+        tracking_kwargs.setdefault("speed_cap", config.speed_cap)
+
+    frames: list[ArrivalFrame] = []
+    tables: list[pd.DataFrame] = []
+    for game in games:
+        f, t = load_match(game, label_config=label_config, competition=competition, **tracking_kwargs)
+        frames.extend(f)
+        tables.append(t)
+
+    table = pd.concat(tables, ignore_index=True)
+    return frames, table
 
 
 def load_skillcorner(

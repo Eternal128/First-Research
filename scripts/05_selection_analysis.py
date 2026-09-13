@@ -26,10 +26,11 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from _common import banner, load_config, outdir, save_table, seed_everything, write_manifest
+from _common import banner, load_config, load_corpus, outdir, save_table, seed_everything, write_manifest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from pcc.calibration import brier_score, corp_decomposition  # noqa: E402
+from pcc.models import build_model  # noqa: E402
 from pcc.models.features import build_feature_matrix  # noqa: E402
 from pcc.selection import (  # noqa: E402
     CandidateConfig, SelectionModel, effective_sample_size, generate_candidates,
@@ -41,6 +42,7 @@ from pcc.selection import (  # noqa: E402
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--source", default="simulated")
+    ap.add_argument("--root", default=None, help="Path to raw data for provider sources.")
     ap.add_argument("--config", default="default.yaml")
     ap.add_argument("--model", default="M2_physical")
     args = ap.parse_args()
@@ -52,29 +54,9 @@ def main() -> int:
     print("  It does NOT correct selection on what the passer knew and we did not,")
     print("  and it does NOT identify control where the ball never arrived.\n")
 
-    if args.source != "simulated":
-        print("ERROR: this script currently rebuilds frames only for the simulated source; "
-              "for provider data, complete the loader and cache frames in scripts/02.")
-        return 1
-
-    from pcc.data import SimulationConfig, filter_arrivals
-    from pcc.data.preprocess import PreprocessConfig, Provenance
-    from pcc.data.synthetic import simulate_dataset
-    from pcc.evaluation import add_subgroups
-    from pcc.models import build_model
-
-    sim = SimulationConfig(
-        n_matches=cfg["simulation"]["n_matches"],
-        arrivals_per_match=cfg["simulation"]["arrivals_per_match"],
-        random_state=cfg.get("random_state", 0),
-    )
-    frames, arrivals = simulate_dataset(sim)
-    prov = Provenance()
-    filtered = filter_arrivals(arrivals, PreprocessConfig(**cfg.get("preprocess", {})), provenance=prov)
-    keep = arrivals["arrival_id"].isin(filtered["arrival_id"]).to_numpy()
-    frames = [f for f, k in zip(frames, keep) if k]
-    df = add_subgroups(filtered).reset_index(drop=True)
+    frames, df, _prov = load_corpus(args.source, cfg, root=args.root)
     y = df["y_control"].to_numpy(dtype=int)
+    print(f"  {len(df)} arrivals, {df['match_id'].nunique()} matches, base rate {y.mean():.3f}")
 
     model = build_model(args.model, **cfg["models"].get("params", {}).get(args.model, {}))
     if model.requires_fitting:

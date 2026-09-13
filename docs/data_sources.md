@@ -42,28 +42,63 @@ simulates.
 ## 2. Status of each candidate source
 
 Status vocabulary: `unverified` (listed from documentation, not checked);
-`verified_reachable` (endpoint responded here — says nothing about contents or
-licence); `verified_contents` (a sample was loaded and the field inventory
+`verified_reachable` (a data-bearing endpoint responded — says nothing about
+contents or licence); `verified_contents` (files opened and the field inventory
 confirmed); `unavailable` (checked, not reachable or access denied).
 
-| Source | Modality | Status in this repository | Access | Role |
+| Source | Modality | Status | Access | Role |
 |---|---|---|---|---|
 | PFF FC 2022 World Cup release | optical | `unverified` | request | intended primary corpus |
-| Metrica Sports sample data | optical | `unverified` | open download | development, pipeline validation |
-| SkillCorner open data | broadcast | `unverified` | open download | broadcast arm of RQ4 |
-| StatsBomb Open Data | event (+ freeze frames for some competitions) | `unverified` | open download | fallback design |
-| `pcc.data.synthetic` | simulated | `verified_contents` | generated here | instrument validation, power analysis |
+| Metrica Sports sample data | optical | `verified_contents` | open download | development, pipeline validation |
+| SkillCorner open data | broadcast | `verified_reachable` | open download | broadcast arm of RQ4 |
+| StatsBomb Open Data | event (+ 360 frames) | `verified_contents` | open download | fallback design |
+| `pcc.data.synthetic` | simulated | generated here | — | instrument validation, power analysis |
 
-### Network note
+The machine-readable record — including every verified field, with the date and
+commit checked — is in `src/pcc/data/sources.py`. Obtain data with:
 
-In the environment where this repository was developed, outbound HTTP to these
-hosts returns **HTTP 403 from an egress proxy**. That is a fact about the
-network, not about the datasets. `scripts/01_check_data_availability.py` labels
-such responses `BLOCKED BY LOCAL NETWORK POLICY` and marks the result
-inconclusive, because recording a proxy block as "dataset unavailable" is exactly
-the unverified claim this document forbids.
+```bash
+python scripts/fetch_data.py --source metrica_sample   --accept-terms
+python scripts/fetch_data.py --source skillcorner_open --accept-terms --max-matches 4
+python scripts/fetch_data.py --source statsbomb_open   --accept-terms \
+    --competition 43 --season 106 --with-360
+```
 
----
+### What verification established
+
+**Metrica** — 2 readable matches (a third is in EPTS/FIFA format and needs a
+different deserialiser), 25 fps, ~145,000 frames each, 105 × 68 m, anonymised.
+Coordinates are normalised with **(0,0) at the top left**, so the y-axis
+increases downward and must be negated. Tracking and events are **already
+synchronised**. There is **no frame-level possession label**; the outcome is
+derived from the event stream. 2,046 arrivals extracted, 1,771 after the
+inclusion criteria. Adapter implemented in `src/pcc/data/metrica.py` and tested
+in `tests/test_metrica_adapter.py`.
+
+**SkillCorner** — 20 match directories, Australian A-League 2024/25. The
+repository has changed considerably since the "nine European matches, no events"
+description that circulated earlier: it now ships a derived-events file, a
+phases-of-play file, and 3D body pose for two matches. The tracking JSONL
+**does** carry a per-frame `possession` object. Its tracking files are **Git LFS
+pointers** — a plain clone yields ~130-byte stubs, and the real bytes (~90 MB
+per match) must be fetched from `media.githubusercontent.com`.
+
+**StatsBomb** — 80 competition-seasons, **12 with 360 freeze frames**, including
+**FIFA World Cup 2022** (`competition_id` 43, `season_id` 106, 64 matches), the
+same tournament as the PFF release. Each 360 frame has `event_uuid`, a
+`visible_area` polygon, and a `freeze_frame` of *visible players only*, each
+carrying `teammate` / `actor` / `keeper` and a location but **no identity**.
+
+### A note on the availability probe
+
+The first version of `scripts/01_check_data_availability.py` reported all three
+sources unreachable. It was probing each repository's HTML landing page, which
+this environment's egress proxy blocks with HTTP 403, while raw content and
+`git` were reachable throughout. The probe now targets a small data-bearing
+endpoint and distinguishes a proxy block from a missing dataset.
+
+Record it here because it is the same mistake the study is about: **a negative
+result from an unvalidated instrument is not evidence.**
 
 ## 3. Per-source verification checklists
 
@@ -99,52 +134,113 @@ and update `src/pcc/data/sources.py` with the verified status.
 competition, so this corpus alone cannot support leave-one-competition-out
 validation.
 
-### 3.2 Metrica Sports sample data
+### 3.2 Metrica Sports sample data — **COMPLETE**
 
-- [ ] Identify which matches are in the normalised CSV layout and which are in
-      the EPTS/FIFA format; they need different deserialisers.
-- [ ] Confirm the coordinate convention, origin, and whether the y-axis is
-      inverted.
-- [ ] Confirm the frame rate **per match** — do not assume uniformity.
-- [ ] Confirm whether a frame-level possession label exists.
-- [ ] Confirm whether a ball z-coordinate is present.
-- [ ] Read the licence.
+Checked 2026-09-13 against commit `e706dd5`.
 
-**Known design consequence:** this is a small sample. With very few matches the
-match-clustered bootstrap has too few clusters for intervals to mean much, so it
-is a development and pipeline-validation corpus, not a primary one.
+- [x] Layouts: `Sample_Game_1` and `Sample_Game_2` are CSV and are read by the
+      adapter; `Sample_Game_3` is EPTS/FIFA and is **not** read. `available_games`
+      returns only the readable ones, so the corpus size is never silently
+      inflated by a half-read match.
+- [x] Coordinates: normalised `[0,1]`, **(0,0) top-left, (1,1) bottom-right**.
+      The y-axis increases downward and is negated in `to_metric`. Pitch
+      105 × 68 m.
+- [x] Frame rate: 25 fps, constant, ~145,006 frames per match. Asserted by
+      `TrackingTable.validate` against the timestamps rather than assumed.
+- [x] Frame-level possession label: **absent**. Derived from the event stream
+      (a paired `BALL LOST` / `RECOVERY` transfer log) by
+      `possession_from_events`, and recorded in each row's `provider` field.
+- [x] Ball z-coordinate: **absent**, so aerial and ground arrivals cannot be
+      separated; `pass_height` is inferred only from `HEAD`/`CROSS` subtypes.
+- [x] Synchronisation: tracking and events are **already synchronised** (events
+      carry frame numbers). No offset estimation needed.
+- [x] Licence read: the repository asks for responsible use and acknowledgement
+      of the source. Not a formal open licence; read it before publishing.
+- [x] Goalkeepers: **no position labels** (the data is anonymised), so keepers
+      are inferred as the player furthest in `x` from their team's centroid.
 
-### 3.3 SkillCorner open data
+**Verified design consequence (arrival taxonomy):** Metrica yields 1,760 chosen
+arrivals but only **11 unchosen** ones (clearances). Its schema folds most
+loose-ball contests into a `CHALLENGE` type with no flight coordinates, so the
+quasi-exogenous subsample that carries the study's identification argument is
+effectively unavailable here. **Count the exogenous arrivals for any candidate
+corpus and report that count**, not only the total.
 
-- [ ] Confirm **how unobserved (off-camera) players are represented**: missing
-      rows, null coordinates, or an explicit visibility flag. This determines the
-      `att_observed`/`def_observed` masks that drive the whole RQ4 analysis.
-- [ ] Confirm whether the ball track has the same gaps as the player tracks.
+**Verified design consequence (size):** two readable matches means **two
+bootstrap clusters**. No confidence interval computed on this corpus is meaningful, and a
+three-way match-level split is impossible, so RQ5 cannot be run on it. This is a
+development corpus, confirmed, not predicted. `scripts/03_main_analysis.py`
+prints a prominent warning and labels such a run a pipeline demonstration.
+
+### 3.3 SkillCorner open data — **PARTIAL**
+
+Structure inspected 2026-09-13; the adapter is not yet written.
+
+- [x] **Git LFS.** Tracking files are LFS pointers. A plain clone yields
+      ~130-byte stubs. `scripts/fetch_data.py` fetches the real bytes (~90 MB
+      per match) from `media.githubusercontent.com` and verifies that what
+      arrived is not a pointer.
+- [x] Coverage: 20 match directories, Australian A-League 2024/25. The README
+      says 10 matches; **reconcile this discrepancy before quoting a corpus
+      size.**
+- [x] Per-frame `possession` object (`player_id`, `group`) is present — a
+      frame-level possession label, which earlier planning listed as unknown.
+- [x] Off-camera representation: frames carry `image_corners_projection`, and
+      pre-kickoff/off-camera frames have null ball data and an empty
+      `player_data` list, so absence is explicit rather than silent.
 - [ ] Confirm the frame rate and whether it is constant.
-- [ ] Confirm which event stream, if any, accompanies the tracking. If none,
-      arrivals must be detected from the ball track itself — a separate,
-      error-prone step needing its own validation against a hand-labelled sample.
-- [ ] Read the licence.
+- [ ] Confirm exactly how a *partially* visible frame is represented — which
+      players appear in `player_data` and whether a visibility flag accompanies
+      them. This determines the `att_observed`/`def_observed` masks that drive
+      the whole RQ4 analysis.
+- [ ] Confirm whether the ball track has the same gaps as the player tracks.
+- [x] Licence read: released with PySport; the repository asks that SkillCorner
+      be credited.
+
+**Contamination warning.** The `dynamic_events.csv` is a derived-metrics product
+carrying SkillCorner's own `xpass_completion`, EPV and pressure measures. Using
+any of those as model inputs would contaminate the comparison — they already
+encode a fitted answer to a closely related question. Only raw positional and
+outcome fields may be used.
+
+**Methodological warning.** Imputing missing players and then reporting a
+control probability as though all twenty-two were observed is precisely the
+practice this study exists to scrutinise. `frame_completeness` must be computed
+per arrival and carried through as a covariate.
 
 **Methodological warning.** Imputing missing players and then reporting a control
 probability as though all twenty-two were observed is precisely the practice this
 study exists to scrutinise. `frame_completeness` must be computed per arrival and
 carried through as a covariate.
 
-### 3.4 StatsBomb Open Data
+### 3.4 StatsBomb Open Data — **PARTIAL**
 
-- [ ] Confirm **which competitions carry 360 freeze frames** — the binding
-      constraint on the fallback design's sample size.
+Structure inspected 2026-09-13; the adapter is not yet written.
+
+- [x] **12 of 80 competition-seasons carry 360 frames** — the binding constraint
+      on the fallback design's sample size. They include **FIFA World Cup 2022**
+      (`competition_id` 43, `season_id` 106, 64 matches), the same tournament as
+      the PFF optical release, which would make the fallback a *same-tournament*
+      comparison rather than a different one.
+- [x] Frame structure: `event_uuid`, `visible_area`, `freeze_frame`. Each
+      freeze-frame entry has `teammate`, `actor`, `keeper` and `location` — and
+      **no player identity**, so per-player sprint-speed estimation is
+      impossible and a squad-level envelope must be assumed.
+- [x] **`visible_area` confirmed present** as a polygon. This settles the
+      central worry: freeze frames cover only part of the pitch, so "no defender
+      near the destination" can mean "no defender **visible**". Any adapter MUST
+      use `visible_area` to mark destinations outside the covered region rather
+      than treating absence as empty space, which would bias control upward
+      exactly where it matters most.
 - [ ] Confirm the freeze-frame coordinate frame and its relation to the event
-      frame.
-- [ ] Confirm the **visible-area polygon**. Freeze frames cover only part of the
-      pitch, so "no defender near the destination" may mean "no defender
-      visible", which would bias control estimates upward exactly where it
-      matters most.
-- [ ] Read the user agreement governing use and redistribution.
+      frame (StatsBomb's event frame is a 120 × 80 template, not metres).
+- [ ] Read the user agreement in the repository before publishing anything
+      derived from the data.
 
-**Design consequences already known:** no velocity; imputed arrival times; the
-physics models run only in their zero-velocity form.
+**Verified design consequences:** no velocity; no player identity; arrival times
+must be imputed from a ball-speed model; the physics models run only in their
+zero-velocity form. The fallback answers a weaker question on a larger sample,
+and the weakening coincides exactly with the "remove velocity" ablation.
 
 ---
 

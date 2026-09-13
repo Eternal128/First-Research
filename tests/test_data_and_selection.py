@@ -172,18 +172,37 @@ def test_label_config_rejects_an_unknown_definition():
 
 
 # --- source registry --------------------------------------------------------
-def test_no_source_claims_verified_status_without_evidence():
-    """Only the simulator, which this repo generates, may claim verified contents."""
+def test_verified_status_is_backed_by_recorded_evidence():
+    """A source may claim verified contents only if it records what was checked.
+
+    This is the invariant that keeps the registry honest as sources are
+    verified one by one: the claim and the evidence move together, so a status
+    cannot be upgraded by editing one field.
+    """
     for key, src in SOURCES.items():
-        if src.status == "verified_contents":
-            assert key == "simulated", f"{key} claims verified contents without evidence"
+        if src.status == "verified_contents" and key != "simulated":
+            assert src.verified_fields, f"{key} claims verified contents with no verified_fields"
+            assert "checked_on" in src.verified_fields, f"{key} records no verification date"
+        if src.status == "unverified":
+            assert "not verified" in src.licence_note.lower(), (
+                f"{key} is unverified but its licence_note does not say so"
+            )
 
 
-def test_every_external_source_carries_caveats():
+def test_every_external_source_carries_caveats_and_a_licence_note():
     for key, src in SOURCES.items():
         if key != "simulated":
             assert src.caveats, f"{key} has no recorded caveats"
-            assert "not verified" in src.licence_note.lower()
+            assert src.licence_note.strip(), f"{key} has no licence note"
+
+
+def test_verified_caveats_are_marked_as_verified():
+    """Caveats established from the files are distinguishable from assumed ones."""
+    for key, src in SOURCES.items():
+        if src.status == "verified_contents" and key != "simulated":
+            assert any(c.startswith("VERIFIED") for c in src.caveats), (
+                f"{key} claims verified contents but no caveat is marked VERIFIED"
+            )
 
 
 def test_missing_provider_data_raises_an_actionable_error():

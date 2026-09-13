@@ -20,17 +20,17 @@ Axes swept:
 from __future__ import annotations
 
 import argparse
-import itertools
 import sys
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
-from _common import banner, load_config, outdir, save_table, seed_everything, write_manifest
+from _common import banner, load_config, load_corpus, outdir, save_table, seed_everything, write_manifest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from pcc.calibration import brier_score, calibration_slope_intercept, corp_decomposition  # noqa: E402
+from pcc.evaluation import grouped_holdout  # noqa: E402
 from pcc.geometry import Pitch  # noqa: E402
 from pcc.kinematics import LocomotionParams  # noqa: E402
 from pcc.models.features import FeatureConfig  # noqa: E402
@@ -59,6 +59,7 @@ def evaluate(model, frames, y, *, fit_idx=None, test_idx=None) -> dict:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--source", default="simulated")
+    ap.add_argument("--root", default=None, help="Path to raw data for provider sources.")
     ap.add_argument("--config", default="default.yaml")
     args = ap.parse_args()
 
@@ -66,28 +67,25 @@ def main() -> int:
     seed_everything(cfg.get("random_state", 0))
     banner("Ablations")
 
-    if args.source != "simulated":
-        print("ERROR: ablations need frames; implement the provider loader first.")
-        return 1
+    frames, df, _prov = load_corpus(args.source, cfg, root=args.root)
+    y = df["y_control"].to_numpy(dtype=int)
+    print(f"  {len(df)} arrivals, {df['match_id'].nunique()} matches, base rate {y.mean():.3f}")
 
-    from pcc.data import SimulationConfig, filter_arrivals
-    from pcc.data.preprocess import PreprocessConfig, Provenance
-    from pcc.data.synthetic import simulate_dataset
-    from pcc.evaluation import add_subgroups, grouped_holdout
-
-    sim = SimulationConfig(
-        n_matches=cfg["simulation"]["n_matches"],
-        arrivals_per_match=cfg["simulation"]["arrivals_per_match"],
+    # Ablations are evaluated on a held-out fold, so that a sweep over an
+    # assumed parameter cannot be flattered by the fitted baselines having seen
+    # the same arrivals.
+    split = grouped_holdout(
+        df,
+        group_col=cfg["evaluation"]["split_group"],
+        test_frac=cfg["evaluation"]["test_frac"],
+        valid_frac=cfg["evaluation"]["valid_frac"],
         random_state=cfg.get("random_state", 0),
     )
-    frames, arrivals = simulate_dataset(sim)
-    filtered = filter_arrivals(arrivals, PreprocessConfig(**cfg.get("preprocess", {})), provenance=Provenance())
-    keep = arrivals["arrival_id"].isin(filtered["arrival_id"]).to_numpy()
-    frames = [f for f, k in zip(frames, keep) if k]
-    df = add_subgroups(filtered).reset_index(drop=True)
-    y = df["y_control"].to_numpy(dtype=int)
-    split = grouped_holdout(df, random_state=cfg.get("random_state", 0))
-    print(f"  {len(frames)} arrivals; test fold {split.test.size}")
+    print(f"  test fold: {split.test.size} arrivals "
+          f"({df.iloc[split.test]['match_id'].nunique()} match(es))")
+    if df["match_id"].nunique() < 10:
+        print("  NOTE: too few matches for the spread below to be interpreted as a")
+        print("        finding; it demonstrates the sweep, not a property of football.")
 
     base = LocomotionParams(**{k: v for k, v in cfg["locomotion"].items() if k != "tti_model"})
     tti = cfg["locomotion"]["tti_model"]

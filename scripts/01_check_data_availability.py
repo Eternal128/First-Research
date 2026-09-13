@@ -99,8 +99,13 @@ def main() -> int:
             "missing_for_fallback_design": list(src.missing(FALLBACK_REQUIREMENTS)),
             "local": inspect_local(key),
         }
-        if args.probe_network and src.url:
-            entry["network"] = probe(src.url)
+        # Probe a data-bearing endpoint, not the repository's HTML landing page:
+        # many proxies block github.com HTML while allowing raw content, which
+        # would otherwise record a reachable dataset as unreachable.
+        probe_target = getattr(src, "probe_url", None) or src.url
+        if args.probe_network and probe_target:
+            entry["probe_url"] = probe_target
+            entry["network"] = probe(probe_target)
         report[key] = entry
 
         local = entry["local"]

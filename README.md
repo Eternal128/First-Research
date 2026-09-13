@@ -26,8 +26,9 @@ evaluation problem.
 | Protocol | Complete — 25 sections, pre-registered hypotheses and analysis plan |
 | Implementation | Complete and tested — models, metrics, splits, selection layer, downstream propagation, ablations |
 | Tests | 120 passing, including 8 instrument-validation checks |
-| Real data | **None.** No provider data is included or verified. See `docs/data_sources.md` |
-| Results | Simulated only. They describe the simulator, **not football** |
+| Real data | Metrica, SkillCorner and StatsBomb obtained and **verified against the files**; PFF unobtained. See `docs/data_sources.md` |
+| Loaders | Metrica implemented and tested; SkillCorner and StatsBomb are scaffolds |
+| Results | Not committed. Metrica is 2 matches — a pipeline demonstration, not findings |
 
 ---
 
@@ -40,11 +41,22 @@ pip install -e .
 python scripts/00_environment_report.py      # what can run here
 python scripts/09_validate_instrument.py     # is the calibration estimator correct?
 bash    scripts/run_all.sh                   # the whole pipeline, on simulated data
-pytest -q                                    # 120 tests
+pytest -q                                    # the test suite
 ```
 
-No network access and no provider data are needed. Everything runs on the
-built-in simulator.
+No network access and no provider data are needed for any of that — it runs on
+the built-in simulator.
+
+To run on real football:
+
+```bash
+python scripts/fetch_data.py --source metrica_sample --accept-terms
+python scripts/03_main_analysis.py --source metrica_sample
+```
+
+The Metrica corpus is two matches, so the analysis script will tell you — at
+length — that it is a pipeline demonstration and not a result. That is the
+point: two matches means two bootstrap clusters.
 
 ---
 
@@ -90,21 +102,27 @@ selection would have to be to explain a finding away.
 
 ## Data
 
-**No provider data is in this repository, and none of the candidate sources'
-properties have been verified here.** `docs/data_sources.md` records what each
-source is documented to provide, what must be checked before relying on it, and
-the licensing position. Run:
+**No provider data is committed to this repository** (`data/raw/` is
+git-ignored), but three sources have now been obtained and opened, and
+`docs/data_sources.md` records what was verified against the files rather than
+what the documentation claims. Highlights: Metrica has no frame-level possession
+label, so the outcome is derived; SkillCorner's tracking files are Git LFS
+pointers that a plain clone will not resolve; StatsBomb's 360 frames cover only
+a `visible_area` polygon, so an absent defender may be an unseen one. Run:
 
 ```bash
 python scripts/01_check_data_availability.py --probe-network
 ```
 
 It reports presence and reachability only, distinguishes a network block from a
-missing dataset, and writes `results/data_availability.json`.
+missing dataset, and writes `results/data_availability.json`. It probes a
+data-bearing endpoint rather than a repository landing page — an earlier version
+probed the HTML page and reported every source unreachable because a proxy
+blocked it, which is the same mistake the study is about.
 
-Provider adapters in `src/pcc/data/loaders.py` are deliberately unfinished
-scaffolds with `TODO(access)` checklists. They raise actionable errors rather
-than pretending to work.
+`load_metrica` is implemented and tested. `load_skillcorner` and
+`load_statsbomb` remain deliberately unfinished scaffolds with `TODO(access)`
+checklists; they raise actionable errors rather than pretending to work.
 
 ---
 

@@ -59,6 +59,10 @@ class DataSource:
     provides: tuple[str, ...]
     status: str = "unverified"
     url: str | None = None
+    #: A small, data-bearing endpoint used for reachability checks. GitHub's HTML
+    #: pages are blocked by many corporate and sandbox proxies while raw content
+    #: is not, so probing the landing page produces false negatives.
+    probe_url: str | None = None
     access: str = "unknown"             # 'open_download' | 'registration' | 'request' | 'commercial'
     licence_note: str = "Licence not verified by this repository; read the terms before use."
     coverage_note: str = ""
@@ -131,49 +135,124 @@ SOURCES: dict[str, DataSource] = {
         modality="optical",
         provides=(
             "player_tracking", "ball_tracking", "event_data",
-            "pass_start_coords", "pass_end_coords", "match_metadata",
+            "pass_start_coords", "pass_end_coords", "pass_arrival_time",
+            "possession_outcome", "match_metadata",
         ),
-        status="unverified",
+        status="verified_contents",
         url="https://github.com/metrica-sports/sample-data",
+        probe_url="https://raw.githubusercontent.com/metrica-sports/sample-data/master/README.md",
         access="open_download",
+        licence_note=(
+            "The repository asks that use be responsible and that the source be "
+            "acknowledged if anything is made public. Read its README and any linked "
+            "terms before publishing; this note is not a substitute for them."
+        ),
+        coverage_note=(
+            "Three matches. Two (Sample_Game_1, Sample_Game_2) are in the CSV layout "
+            "read by pcc.data.metrica; Sample_Game_3 is in the EPTS/FIFA format and is "
+            "not read. 25 fps, ~145,000 frames per match, 105 x 68 m, anonymised."
+        ),
         study_role=(
-            "Development and pipeline-validation corpus. Small, well documented, "
-            "widely used in teaching material, so the preprocessing can be checked "
-            "against community implementations."
+            "Development and pipeline-validation corpus. Confirmed adequate for "
+            "building and testing the loader end to end; NOT adequate for inference."
         ),
         caveats=(
-            "Very small. Not adequate on its own for the primary analysis: with a "
-            "handful of matches the match-clustered bootstrap has too few clusters "
-            "for the intervals to mean much.",
-            "Whether a frame-level possession label exists must be checked; if not, "
-            "outcomes have to be derived from touch events, which changes the "
-            "construct slightly and must be documented.",
+            "VERIFIED TOO SMALL: two readable matches means two bootstrap clusters. "
+            "No confidence interval computed on it is meaningful, and a three-way "
+            "match-level split is impossible, so RQ5 (recalibration) cannot be run.",
+            "VERIFIED: no frame-level possession label. The outcome is DERIVED from "
+            "the event stream (a paired BALL LOST / RECOVERY transfer log). Every row "
+            "records this in its provider field.",
+            "VERIFIED: tracking and events are already synchronised (events carry "
+            "frame numbers), so no clock-offset estimation is needed - unusual, and it "
+            "removes one of the pipeline's larger error sources.",
+            "VERIFIED: coordinates are normalised to [0,1] with (0,0) at the TOP LEFT, "
+            "so the y-axis increases downward and must be negated.",
+            "VERIFIED: anonymised, with no position labels, so goalkeepers must be "
+            "inferred from position.",
         ),
         loader="load_metrica",
+        verified_fields={
+            "checked_on": "2026-09-13",
+            "commit": "e706dd506b360d69d9d123d5b8026e7294b13996",
+            "fps": 25.0,
+            "pitch_m": [105.0, 68.0],
+            "readable_matches": ["Sample_Game_1", "Sample_Game_2"],
+            "unreadable_matches": {"Sample_Game_3": "EPTS/FIFA format; needs kloppy"},
+            "frames_per_match": 145006,
+            "event_types": {
+                "PASS": [799, 964], "RECOVERY": [278, 248], "BALL LOST": [257, 233],
+                "CHALLENGE": [233, 311], "SET PIECE": [77, 80], "BALL OUT": [51, 49],
+                "SHOT": [24, 24], "FAULT RECEIVED": [22, 20], "CARD": [4, 6],
+            },
+            "arrivals_extracted": 2046,
+            "arrivals_after_filters": 1771,
+            "ball_z_present": False,
+            "provider_velocity": False,
+            "frame_level_possession": False,
+        },
     ),
     "skillcorner_open": DataSource(
         key="skillcorner_open",
         name="SkillCorner open broadcast-derived tracking",
         modality="broadcast",
-        provides=("player_tracking", "ball_tracking", "event_data", "match_metadata"),
-        status="unverified",
+        provides=(
+            "player_tracking", "ball_tracking", "event_data",
+            "possession_outcome", "match_metadata",
+        ),
+        status="verified_reachable",
         url="https://github.com/SkillCorner/opendata",
+        probe_url="https://raw.githubusercontent.com/SkillCorner/opendata/master/data/matches.json",
         access="open_download",
+        licence_note=(
+            "Released jointly by SkillCorner and PySport; the repository asks that "
+            "SkillCorner be credited if the data is used. Read its README before "
+            "publishing."
+        ),
+        coverage_note=(
+            "20 match directories, Australian A-League 2024/25 (the README describes "
+            "10 matches; the directory count differs and should be reconciled). Per "
+            "match: tracking (JSONL), a rich 'dynamic events' CSV, a phases-of-play "
+            "CSV and a match JSON. 3D body pose is included for two matches."
+        ),
         study_role=(
-            "The broadcast-tracking arm of RQ4. Its value to this study is precisely "
-            "its imperfection: off-camera players are missing, so it is the realistic "
+            "The broadcast-tracking arm of RQ4. Its value is precisely its "
+            "imperfection: off-camera players are missing, which is the realistic "
             "data condition for most clubs outside the elite tier."
         ),
         caveats=(
-            "Broadcast tracking omits players outside the camera frame. Frame "
-            "completeness is therefore a first-class covariate, not a nuisance.",
-            "Comparing calibration between this and optical tracking confounds "
-            "measurement quality with the fact that they cover different matches and "
-            "competitions; the degradation-simulation ablation is required to "
-            "separate the two.",
-            "Number of matches, sampling rate and event coverage must be verified.",
+            "VERIFIED: tracking files are stored in Git LFS. A plain `git clone` "
+            "yields ~130-byte pointer stubs, NOT data. Fetch the real bytes from "
+            "media.githubusercontent.com/media/... (scripts/fetch_data.py does this) "
+            "and check the result is not a pointer.",
+            "VERIFIED: the tracking JSONL carries a per-frame `possession` object "
+            "with player_id and group - a frame-level possession label, which the "
+            "study's earlier plan listed as unknown for this source.",
+            "VERIFIED: frames carry `image_corners_projection`, and early frames have "
+            "null ball and empty player_data - off-camera and pre-kickoff periods are "
+            "explicitly represented rather than silently absent.",
+            "The 'dynamic events' file is a derived-metrics product carrying "
+            "SkillCorner's own xpass_completion, EPV and pressure measures. Using "
+            "those as inputs would contaminate the comparison; only raw positional "
+            "and outcome fields may be used.",
+            "Comparing calibration against optical tracking confounds measurement "
+            "quality with the different matches and competitions covered; the "
+            "degradation-simulation ablation is required to separate the two.",
         ),
         loader="load_skillcorner",
+        verified_fields={
+            "checked_on": "2026-09-13",
+            "match_directories": 20,
+            "competition": "Australian A-League 2024/25",
+            "tracking_storage": "git-lfs",
+            "tracking_bytes_per_match": 90729279,
+            "frame_level_possession": True,
+            "bodypose_matches": 2,
+            "files_per_match": [
+                "{id}_match.json", "{id}_tracking_extrapolated.jsonl",
+                "{id}_dynamic_events.csv", "{id}_phases_of_play.csv",
+            ],
+        },
     ),
     "statsbomb_open": DataSource(
         key="statsbomb_open",
@@ -183,24 +262,53 @@ SOURCES: dict[str, DataSource] = {
             "event_data", "pass_start_coords", "pass_end_coords",
             "possession_outcome", "freeze_frames", "match_metadata",
         ),
-        status="unverified",
+        status="verified_contents",
         url="https://github.com/statsbomb/open-data",
+        probe_url="https://raw.githubusercontent.com/statsbomb/open-data/master/data/competitions.json",
         access="open_download",
+        licence_note=(
+            "Governed by StatsBomb's own user agreement, held in the repository. It "
+            "restricts redistribution and commercial use and must be read before any "
+            "data is used or any derived data is published."
+        ),
+        coverage_note=(
+            "80 competition-seasons, of which 12 carry 360 freeze frames - including "
+            "FIFA World Cup 2022 (competition_id 43, season_id 106), the same "
+            "tournament as the PFF optical release. That coincidence makes the "
+            "fallback design a same-tournament comparison rather than a different one."
+        ),
         study_role=(
-            "Fallback corpus. Freeze frames give player positions at the event but "
-            "no continuous tracking and hence no velocity, so only velocity-free "
-            "variants of the control models can be evaluated - a genuinely weaker "
-            "but much larger-sample study."
+            "Fallback corpus. Freeze frames give player positions at the event but no "
+            "continuous tracking and hence no velocity, so only velocity-free variants "
+            "of the control models can be evaluated - a genuinely weaker but much "
+            "larger-sample study."
         ),
         caveats=(
-            "No continuous tracking: arrival times must be imputed from a ball-speed "
-            "model, which makes the flight time partly a modelling artefact.",
-            "360 freeze frames cover only some competitions and only show players "
-            "within the camera's visible area; the covered set must be verified.",
-            "Redistribution and permitted use are governed by StatsBomb's own user "
-            "agreement, which must be read before any data is committed anywhere.",
+            "VERIFIED: no continuous tracking and no velocity. Arrival times must be "
+            "imputed from a ball-speed model, which makes the flight time partly a "
+            "modelling artefact.",
+            "VERIFIED: each 360 frame carries a `visible_area` polygon and a "
+            "`freeze_frame` list of visible players only. 'No defender near the "
+            "destination' can therefore mean 'no defender VISIBLE', which would bias "
+            "control estimates upward exactly where it matters. Any adapter MUST use "
+            "visible_area to mark destinations outside the covered region.",
+            "VERIFIED: freeze-frame players carry teammate/actor/keeper flags and a "
+            "location, but no identity, so per-player sprint-speed estimation is "
+            "impossible.",
+            "VERIFIED: only 12 of 80 competition-seasons have 360 frames; that is the "
+            "binding constraint on the fallback design's sample size.",
         ),
         loader="load_statsbomb",
+        verified_fields={
+            "checked_on": "2026-09-13",
+            "competition_seasons": 80,
+            "with_360": 12,
+            "world_cup_2022": {"competition_id": 43, "season_id": 106, "matches": 64},
+            "frame_keys": ["event_uuid", "visible_area", "freeze_frame"],
+            "freeze_frame_player_keys": ["teammate", "actor", "keeper", "location"],
+            "provider_velocity": False,
+            "player_identity_in_freeze_frame": False,
+        },
     ),
     "simulated": DataSource(
         key="simulated",

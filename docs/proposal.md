@@ -1128,33 +1128,88 @@ addition.
 pose estimates, physiological data, or possession-value labels. The study's
 target is directly observed.
 
-### 10.3 Candidate sources — availability treated as unverified
+### 10.3 Candidate sources — status after verification
 
-> **This subsection makes no claim about what these datasets contain.** The
-> entries record what is *documented or commonly reported*, what the study would
-> need, and what must be checked. Run `scripts/01_check_data_availability.py`
-> and commit `results/data_availability.json` before writing a data section.
-> Full detail, including the per-source verification checklist, is in
-> `docs/data_sources.md`.
+> **What changed.** Section 10.3 originally listed every source as unverified.
+> Three have since been obtained and opened, and the entries below distinguish
+> what was *read from the files* from what is still taken on documentation.
+> `scripts/01_check_data_availability.py` writes
+> `results/data_availability.json`; `src/pcc/data/sources.py` carries the
+> machine-readable record, and `docs/data_sources.md` the full checklists.
 
-| Source | Modality | Documented to provide | Study role | Status here |
-|---|---|---|---|---|
-| PFF FC 2022 World Cup release | optical | player + ball tracking, events | Intended primary corpus | **Unverified.** Access route, availability, licence, sampling rate, and whether a frame-level possession label exists have *not* been checked by this repository. |
-| Metrica Sports sample data | optical | player + ball tracking, events | Development and pipeline validation | **Unverified.** Publicly documented as a small open sample. Too few matches for the primary analysis on its own. |
-| SkillCorner open data | broadcast | broadcast-derived tracking | The broadcast arm of RQ4 | **Unverified.** Its value is its imperfection: off-camera players are missing, which is the realistic condition for most clubs. |
-| StatsBomb Open Data | event (+ freeze frames for some competitions) | events, pass coordinates, freeze frames | **Fallback design** | **Unverified.** No continuous tracking, hence no velocity and no measured arrival time. |
-| `pcc.data.synthetic` | simulated | everything, plus the oracle probability | Instrument validation and power analysis only | Verified (this repository generates it). **Never a source of empirical claims.** |
+| Source | Modality | Status | Study role |
+|---|---|---|---|
+| PFF FC 2022 World Cup release | optical | **Unverified.** Access route, availability, licence and contents have *not* been checked. | Intended primary corpus |
+| Metrica Sports sample | optical | **Verified.** Loader implemented and tested against the files. | Development corpus — confirmed too small for inference |
+| SkillCorner open data | broadcast | **Verified reachable**, structure inspected; loader not yet written. | Broadcast arm of RQ4 |
+| StatsBomb Open Data | event + 360 | **Verified.** Structure inspected; loader not yet written. | Fallback design |
+| `pcc.data.synthetic` | simulated | Generated here. | Instrument validation only |
 
-**Network note.** The environment in which this repository was developed blocks
-outbound HTTP to these hosts (HTTP 403 from an egress proxy). That is a fact
-about the network, not about the datasets, and the availability script labels it
-as inconclusive rather than recording the sources as unavailable.
+#### What verification established, and what it costs the design
 
-**If the primary corpus proves inaccessible**, the pre-registered fallback is the
-freeze-frame design (Section 24.5): evaluate velocity-free variants of the
-control models on event data with freeze frames. It answers a weaker question on
-a larger sample, and its weakness is itself informative, because it coincides
-exactly with the "remove velocity" ablation.
+**Metrica** (two readable matches, 25 fps, 105 × 68 m). Three findings matter.
+Tracking and events are *already synchronised* — events carry frame numbers —
+so the clock-offset step is a no-op, removing one of the pipeline's larger error
+sources. There is **no frame-level possession label**, so the outcome is derived
+from the event stream, which is a paired `BALL LOST` / `RECOVERY` transfer log;
+the derivation is recorded in every row's `provider` field. And the corpus is
+**two matches, hence two bootstrap clusters** — which confirms, rather than
+merely predicts, Section 24.5's judgement that Metrica is a development corpus.
+With two matches a three-way match-level split is impossible, so there is no
+validation fold and RQ5 cannot be run on it at all. The analysis script now
+refuses to present such a run as anything but a pipeline demonstration.
+
+A sanity check worth recording, because it is the strongest available evidence
+that the derived labels are sound: control rates order as football requires —
+open passes 0.93, clearances 0.23, interceptions 0.15.
+
+**SkillCorner** differs substantially from the description this proposal
+originally carried. It is 20 match directories of Australian A-League 2024/25,
+not nine matches of European football, and it now ships a derived-events file, a
+phases-of-play file and 3D body pose for two matches. Two consequences. First,
+the tracking JSONL **does** carry a per-frame `possession` object, which the
+checklist had listed as unknown. Second, the tracking files are **Git LFS
+pointers**: a plain clone yields ~130-byte stubs, and the real bytes must be
+fetched from `media.githubusercontent.com`. An adapter written against the stubs
+would fail confusingly far downstream. Note also that the derived-events file
+carries SkillCorner's own pass-completion and possession-value models; using
+those as inputs would contaminate the comparison, so only raw positional and
+outcome fields may be used.
+
+**StatsBomb** has 80 competition-seasons, of which **12 carry 360 freeze
+frames** — including **FIFA World Cup 2022**, the same tournament as the PFF
+release. That coincidence is worth more than it first appears: it makes the
+fallback a *same-tournament* comparison, so the velocity-free and
+velocity-bearing analyses could in principle be run on the same matches, which
+turns the "remove velocity" ablation into a measurement rather than a
+simulation. Verified structure: each frame carries `event_uuid`, a
+`visible_area` polygon, and a `freeze_frame` of *visible players only*, each with
+`teammate` / `actor` / `keeper` flags and a location but **no identity**. The
+`visible_area` finding confirms the checklist's central worry: "no defender near
+the destination" can mean "no defender visible", which would bias control
+upward exactly where it matters. Any adapter must use `visible_area` to mark
+destinations outside the covered region rather than treating absence as empty
+space.
+
+#### A methodological note on the availability check
+
+The original availability probe reported all three sources unreachable. That was
+wrong, and instructively so: it probed each repository's HTML landing page,
+which this environment's egress proxy blocks with HTTP 403, while raw content
+and `git` were reachable throughout. The check now probes a small data-bearing
+endpoint instead, and distinguishes a proxy block from a missing dataset. The
+general lesson is the one this section is built on — **a negative result from an
+unvalidated instrument is not evidence** — and it applies to the study's own
+calibration estimator exactly as much as to its availability script, which is
+why `scripts/09_validate_instrument.py` exists.
+
+#### Consequence for the design
+
+The primary corpus remains unobtained. The fallback design is therefore not a
+contingency but a live option, and the availability of World Cup 2022 in both
+the intended primary source and the fallback source is the strongest argument
+for pursuing the fallback first: it is obtainable today, it is large, and if the
+optical release is later secured the two can be compared on the same matches.
 
 ---
 
@@ -1473,9 +1528,33 @@ remedy is to match on observables (flight time, height where available, pitch
 zone, local player density) before comparing, and to report post-matching
 covariate balance; an unbalanced match is not a match.
 
-A practical constraint that must be checked early: the exogenous subsample is a
-minority of arrivals. Whether it supports precise estimation is a sample-size
-question the power analysis must answer *before* the design is fixed.
+A practical constraint that must be checked early, and which checking has
+already shown to bite: **the exogenous subsample can be far smaller than the
+arrival count suggests.** On Metrica's two matches, the event taxonomy yields
+1,760 chosen arrivals but only **11** unchosen ones — too few to estimate
+anything, so the subsample is suppressed entirely by the analysis. The
+limitation is not the corpus's size but its *labelling*: Metrica records
+clearances and deflections sparsely and folds most loose-ball contests into a
+`CHALLENGE` type that carries no flight coordinates.
+
+Two consequences follow, and they change the design rather than decorate it.
+First, **a corpus must be selected partly on its arrival taxonomy**, not only on
+its size and tracking quality: a provider that distinguishes deflections,
+clearances and aerial second balls with coordinates is worth more to this study
+than one with twice the matches and a coarser event schema. Second, the
+verification checklist for any candidate corpus must include *counting the
+exogenous arrivals*, and that count must be reported alongside the total. A
+paper that leans on the quasi-exogenous contrast while drawing it from a few
+dozen arrivals would be resting its identification argument on noise.
+
+Relatedly, the same run puts the selection strength in the corpus at an AUC of
+0.998 for separating chosen from proposed destinations, with the effective
+sample size after reweighting falling from 1,771 to 253. Both numbers are from
+two matches and are reported here only as evidence that the diagnostics
+function; but if selection really is that strong in elite football, the
+reweighted arm of the analysis will be badly underpowered relative to its
+nominal `n`, and the design should lean correspondingly harder on the
+quasi-exogenous contrast and the stratified reporting.
 
 #### 2. Density-ratio reweighting — for (a) only
 

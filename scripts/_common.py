@@ -54,6 +54,57 @@ def outdir(name: str, *, config: dict | None = None) -> Path:
     return d
 
 
+
+def load_corpus(source: str, config: dict, *, root: str | None = None):
+    """Load a corpus and apply the study's inclusion criteria and subgroups.
+
+    One code path for every source, so an analysis script never needs to know
+    which provider produced the data. Returns ``(frames, arrivals_table)`` with
+    the table reset to a contiguous index that matches the frame list
+    positionally - every downstream split indexes both by position, so the two
+    must not drift apart.
+    """
+    from pcc.data import SimulationConfig, filter_arrivals, load_source
+    from pcc.data.labels import LabelConfig
+    from pcc.data.preprocess import PreprocessConfig, Provenance
+    from pcc.evaluation import add_subgroups
+
+    label_cfg = LabelConfig(
+        definition=config.get("labels", {}).get("definition", "controlled_at_horizon"),
+        horizon=float(config.get("labels", {}).get("horizon", 1.0)),
+        censor_on_stoppage=bool(config.get("labels", {}).get("censor_on_stoppage", True)),
+    )
+
+    if source == "simulated":
+        sim = SimulationConfig(
+            n_matches=config["simulation"]["n_matches"],
+            arrivals_per_match=config["simulation"]["arrivals_per_match"],
+            control_horizon=label_cfg.horizon,
+            random_state=config.get("random_state", 0),
+        )
+        frames, arrivals = load_source("simulated", **sim.__dict__)
+    else:
+        if root is None:
+            root = str(DATA_RAW / source)
+        frames, arrivals = load_source(source, root=root, label_config=label_cfg)
+
+    prov = Provenance()
+    pp = PreprocessConfig(**config.get("preprocess", {}))
+    filtered = filter_arrivals(arrivals, pp, provenance=prov)
+
+    keep = arrivals["arrival_id"].isin(filtered["arrival_id"]).to_numpy()
+    if keep.sum() != len(filtered):
+        raise AssertionError(
+            f"filter kept {len(filtered)} rows but the mask selects {int(keep.sum())} frames; "
+            "arrival_id is not unique or the filter reordered rows"
+        )
+    frames = [f for f, k in zip(frames, keep) if k]
+    table = add_subgroups(filtered).reset_index(drop=True)
+    if len(frames) != len(table):
+        raise AssertionError(f"frame/table length mismatch: {len(frames)} vs {len(table)}")
+    return frames, table, prov
+
+
 def git_revision() -> str:
     try:
         return subprocess.check_output(
