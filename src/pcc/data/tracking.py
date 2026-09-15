@@ -281,6 +281,84 @@ def build_possession_track(
     return pd.Series(poss), stop
 
 
+
+def arrival_row(
+    spec: "ArrivalSpec",
+    *,
+    origin: np.ndarray,
+    destination: np.ndarray,
+    flight_time: float,
+    label: dict,
+    horizon: float,
+    match_id: str,
+    competition: str,
+    n_players_a: int,
+    n_players_b: int,
+    pressure_index: float,
+    frame_completeness: float,
+    tracking_source: str,
+    provider: str,
+    sync_offset: float = 0.0,
+    flight_time_imputed: bool = False,
+    quality_flag: str = "ok",
+    row_ordinal: int = 0,
+    extra: dict | None = None,
+) -> dict:
+    """Build one row of the arrivals table.
+
+    Shared by the continuous-tracking path (:func:`assemble_arrivals`) and by
+    adapters working from per-event freeze frames, which have no continuous
+    tracking to index into. Keeping the schema in one function is what stops
+    the two paths drifting apart: a column added for one provider and forgotten
+    for another would silently produce two incompatible corpora that the
+    evaluation code would happily concatenate.
+    """
+    origin = np.asarray(origin, dtype=float).reshape(2)
+    destination = np.asarray(destination, dtype=float).reshape(2)
+    flight_time = float(max(flight_time, 1e-3))
+    length = float(np.linalg.norm(destination - origin))
+
+    row = {
+        "arrival_id": spec.arrival_id,
+        "match_id": match_id,
+        "competition": competition,
+        "possession_id": spec.possession_id or f"{match_id}_p{row_ordinal // 5:05d}",
+        "period": int(spec.period),
+        "team_a": spec.team_a,
+        "team_b": spec.team_b,
+        "t_release": float(spec.t_release),
+        "t_arrival": float(spec.t_release + flight_time),
+        "flight_time": flight_time,
+        "flight_time_imputed": bool(flight_time_imputed),
+        "origin_x": float(origin[0]), "origin_y": float(origin[1]),
+        "dest_x": float(destination[0]), "dest_y": float(destination[1]),
+        "y_control": int(label["y"]),
+        "y_first_touch": int(label["y"]),
+        "control_horizon": float(horizon),
+        "outcome_censored": bool(label["censored"]),
+        "arrival_type": spec.arrival_type,
+        "is_endogenous": bool(spec.is_endogenous),
+        "pass_length": length,
+        "pass_height": spec.pass_height,
+        "ball_speed": length / flight_time,
+        "score_diff": 0,
+        "minute": float(spec.t_release / 60.0),
+        "n_players_a": int(n_players_a),
+        "n_players_b": int(n_players_b),
+        "pressure_index": float(pressure_index),
+        "set_piece": bool(spec.set_piece),
+        "tracking_source": tracking_source,
+        "provider": provider,
+        "frame_completeness": float(frame_completeness),
+        "sync_offset": float(sync_offset),
+        "quality_flag": quality_flag,
+        "source_event": spec.source_event,
+    }
+    if extra:
+        row.update(extra)
+    return row
+
+
 def assemble_arrivals(
     tracking: TrackingTable,
     specs: list[ArrivalSpec],
@@ -337,6 +415,7 @@ def assemble_arrivals(
         label = label_from_possession_track(
             possession, tracking.time, spec.t_arrival, spec.team_a, cfg,
             stoppage=pd.Series(stoppage),
+            periods=tracking.period, arrival_period=int(spec.period),
         )
 
         completeness = float((obs[sel_a].sum() + obs[sel_b].sum()) / 22.0)
@@ -352,42 +431,15 @@ def assemble_arrivals(
             )
         )
         rows.append(
-            {
-                "arrival_id": spec.arrival_id,
-                "match_id": match_id,
-                "competition": competition,
-                "possession_id": spec.possession_id or f"{match_id}_p{len(rows) // 5:05d}",
-                "period": int(spec.period),
-                "team_a": spec.team_a,
-                "team_b": spec.team_b,
-                "t_release": float(spec.t_release),
-                "t_arrival": float(spec.t_release + flight),
-                "flight_time": flight,
-                "flight_time_imputed": False,
-                "origin_x": float(origin[0]), "origin_y": float(origin[1]),
-                "dest_x": float(dest[0]), "dest_y": float(dest[1]),
-                "y_control": int(label["y"]),
-                "y_first_touch": int(label["y"]),
-                "control_horizon": float(cfg.horizon),
-                "outcome_censored": bool(label["censored"]),
-                "arrival_type": spec.arrival_type,
-                "is_endogenous": bool(spec.is_endogenous),
-                "pass_length": float(np.linalg.norm(dest - origin)),
-                "pass_height": spec.pass_height,
-                "ball_speed": float(np.linalg.norm(dest - origin) / flight),
-                "score_diff": 0,
-                "minute": float(spec.t_release / 60.0),
-                "n_players_a": int(sel_a.sum()),
-                "n_players_b": int(sel_b.sum()),
-                "pressure_index": float(n_opp_near_origin),
-                "set_piece": bool(spec.set_piece),
-                "tracking_source": tracking_source,
-                "provider": provider,
-                "frame_completeness": completeness,
-                "sync_offset": float(tracking.meta.get("sync_offset", 0.0)),
-                "quality_flag": "ok",
-                "source_event": spec.source_event,
-            }
+            arrival_row(
+                spec, origin=origin, destination=dest, flight_time=flight, label=label,
+                horizon=cfg.horizon, match_id=match_id, competition=competition,
+                n_players_a=int(sel_a.sum()), n_players_b=int(sel_b.sum()),
+                pressure_index=n_opp_near_origin, frame_completeness=completeness,
+                tracking_source=tracking_source, provider=provider,
+                sync_offset=float(tracking.meta.get("sync_offset", 0.0)),
+                row_ordinal=len(rows),
+            )
         )
 
     table = pd.DataFrame(rows)

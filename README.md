@@ -27,8 +27,8 @@ evaluation problem.
 | Implementation | Complete and tested — models, metrics, splits, selection layer, downstream propagation, ablations |
 | Tests | 120 passing, including 8 instrument-validation checks |
 | Real data | Metrica, SkillCorner and StatsBomb obtained and **verified against the files**; PFF unobtained. See `docs/data_sources.md` |
-| Loaders | Metrica implemented and tested; SkillCorner and StatsBomb are scaffolds |
-| Results | Not committed. Metrica is 2 matches — a pipeline demonstration, not findings |
+| Loaders | **Metrica and StatsBomb implemented and tested**; SkillCorner is a scaffold |
+| Results | Not committed. The largest real corpus here is 8 matches — a pipeline demonstration, not findings |
 
 ---
 
@@ -50,13 +50,20 @@ the built-in simulator.
 To run on real football:
 
 ```bash
+# optical tracking, 2 matches - the development corpus
 python scripts/fetch_data.py --source metrica_sample --accept-terms
 python scripts/03_main_analysis.py --source metrica_sample
+
+# event data + 360 freeze frames, World Cup 2022 - the fallback design
+python scripts/fetch_data.py --source statsbomb_open --accept-terms \
+    --competition 43 --season 106 --max-matches 8 --with-360
+python scripts/03_main_analysis.py --source statsbomb_open
 ```
 
-The Metrica corpus is two matches, so the analysis script will tell you — at
-length — that it is a pipeline demonstration and not a result. That is the
-point: two matches means two bootstrap clusters.
+Both corpora are small, and the analysis script will tell you so at length: the
+cluster bootstrap resamples *matches*, so two matches means two clusters. Treat
+anything either produces as a demonstration that the pipeline works, not as a
+finding about football.
 
 ---
 
@@ -72,7 +79,9 @@ point: two matches means two bootstrap clusters.
 | `src/pcc/evaluation/` | Leakage-safe splits, the evaluation protocol, subgroups, decision curves |
 | `src/pcc/selection/` | Candidate arrivals, density-ratio weights, overlap diagnostics, sensitivity bounds |
 | `src/pcc/downstream/` | Positional value surface, EPV, space metrics, decision displacement |
-| `src/pcc/data/` | Schema contract, labelling, preprocessing, source registry, loaders, simulator |
+| `src/pcc/data/` | Schema contract, labelling, preprocessing, source registry, simulator |
+| `src/pcc/data/metrica.py`, `statsbomb.py` | Implemented provider adapters |
+| `src/pcc/data/tracking.py` | Provider-independent state container and arrival assembly |
 | `scripts/` | The numbered pipeline; `run_all.sh` runs all of it |
 | `configs/default.yaml` | Every analyst choice, hashed into each results manifest |
 
@@ -120,9 +129,19 @@ data-bearing endpoint rather than a repository landing page — an earlier versi
 probed the HTML page and reported every source unreachable because a proxy
 blocked it, which is the same mistake the study is about.
 
-`load_metrica` is implemented and tested. `load_skillcorner` and
-`load_statsbomb` remain deliberately unfinished scaffolds with `TODO(access)`
-checklists; they raise actionable errors rather than pretending to work.
+`load_metrica` and `load_statsbomb` are implemented and tested.
+`load_skillcorner` remains a deliberately unfinished scaffold with a
+`TODO(access)` checklist; it raises an actionable error rather than pretending
+to work.
+
+Verification changed the plan in three places, which is the main argument for
+doing it before writing a data section: StatsBomb arrival times turned out to be
+**measured** rather than needing imputation; **neither** open corpus supplies
+enough exogenous arrivals (deflections, clearances, second balls) to support the
+study's strongest identification argument, making arrival taxonomy a first-order
+criterion for corpus choice; and the two providers place a failed pass's
+"arrival" at **different points**, so pooling them without adjustment would mix
+two estimands.
 
 ---
 

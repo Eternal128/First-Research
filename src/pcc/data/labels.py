@@ -74,6 +74,8 @@ def label_from_possession_track(
     config: LabelConfig | None = None,
     *,
     stoppage: pd.Series | None = None,
+    periods: np.ndarray | None = None,
+    arrival_period: int | None = None,
 ) -> dict[str, object]:
     """Label one arrival from a per-frame possession-team track.
 
@@ -89,6 +91,14 @@ def label_from_possession_track(
         The team whose control probability is being modelled.
     stoppage
         Optional per-frame boolean marking dead-ball frames.
+    periods, arrival_period
+        Optional per-frame period index and the arrival's period. **Supply both
+        whenever the provider's clock restarts each period**, as StatsBomb's
+        does: without them the frames are sorted by timestamp alone and a
+        first-half arrival can be matched against a second-half frame with a
+        similar timestamp. Corpora with a continuous match clock (Metrica) are
+        unaffected either way, which is exactly why the bug is easy to miss -
+        it appears only when a second provider is added.
 
     Returns
     -------
@@ -105,10 +115,21 @@ def label_from_possession_track(
     """
     cfg = config or LabelConfig()
     times = np.asarray(times, dtype=float)
+    poss_all = possession_team.to_numpy()
+    stop_all = None if stoppage is None else np.asarray(stoppage)
+
+    if periods is not None and arrival_period is not None:
+        keep = np.flatnonzero(np.asarray(periods) == arrival_period)
+        if keep.size == 0:
+            return {"y": 0, "censored": True, "definition": cfg.definition, "horizon": cfg.horizon}
+        times = times[keep]
+        poss_all = poss_all[keep]
+        stop_all = None if stop_all is None else stop_all[keep]
+
     order = np.argsort(times)
     times = times[order]
-    poss = possession_team.to_numpy()[order]
-    stop = None if stoppage is None else np.asarray(stoppage)[order]
+    poss = poss_all[order]
+    stop = None if stop_all is None else stop_all[order]
 
     window = (times >= t_arrival) & (times <= t_arrival + cfg.horizon)
     if not window.any():

@@ -284,9 +284,23 @@ SOURCES: dict[str, DataSource] = {
             "larger-sample study."
         ),
         caveats=(
-            "VERIFIED: no continuous tracking and no velocity. Arrival times must be "
-            "imputed from a ball-speed model, which makes the flight time partly a "
-            "modelling artefact.",
+            "VERIFIED: no continuous tracking and no velocity. Every model runs in "
+            "its zero-velocity form, so the fallback MEASURES what the 'remove "
+            "velocity' ablation only simulates.",
+            "CORRECTION (verified): arrival times do NOT have to be imputed. Every "
+            "pass carries a `duration`, with implied ball speeds of 6.9-22.1 m/s "
+            "(median 13.1). Earlier planning assumed a ball-speed model would be "
+            "needed; it is not. Caveat: `duration` runs to the related event, which "
+            "is the flight time for a completed pass and an approximation otherwise.",
+            "VERIFIED: 360 frames cover 86.6% of passes; the median frame shows 17 "
+            "of 22 players and NO frame shows all 22. Frame completeness is a "
+            "first-class covariate, not a nuisance.",
+            "VERIFIED: 16.4% of pass destinations fall OUTSIDE the visible_area "
+            "polygon. For those arrivals 'no defender near the destination' means "
+            "'no defender visible'. The adapter flags them destination_not_visible.",
+            "VERIFIED: only Pass events carry both a start and an end location, so "
+            "the corpus contains NO exogenous arrivals at all. The quasi-exogenous "
+            "identification argument of proposal Section 14 is unavailable here.",
             "VERIFIED: each 360 frame carries a `visible_area` polygon and a "
             "`freeze_frame` list of visible players only. 'No defender near the "
             "destination' can therefore mean 'no defender VISIBLE', which would bias "
@@ -308,6 +322,16 @@ SOURCES: dict[str, DataSource] = {
             "freeze_frame_player_keys": ["teammate", "actor", "keeper", "location"],
             "provider_velocity": False,
             "player_identity_in_freeze_frame": False,
+            "pass_duration_present": True,
+            "implied_ball_speed_ms": {"p5": 6.9, "p50": 13.1, "p95": 22.1},
+            "pass_360_coverage": 0.866,
+            "median_players_visible": 17,
+            "frames_with_all_22": 0,
+            "destination_inside_visible_area": 0.836,
+            "exogenous_arrival_types_available": [],
+            "arrivals_8_matches": 7284,
+            "base_rate_control_h1s": 0.90,
+            "label_agreement_with_completed_passes": 0.966,
         },
     ),
     "simulated": DataSource(

@@ -712,6 +712,13 @@ Four reasons:
    under-specified and the paper must say so rather than pick the horizon that
    supports it.
 
+**A provider-level complication, found in implementation.** Where a failed pass's
+"arrival" is deemed to occur is not a fact but a provider convention. Metrica
+places it where the defender intervened; StatsBomb places it where the ball was
+aimed or ended up. These are different points and therefore different estimands
+for the same event. A single-provider corpus avoids the problem entirely; a
+pooled one must harmonise or stratify, and must say which it did.
+
 **A necessary concession.** Under this definition a model that perfectly answers
 question (i) *should* appear miscalibrated, because (i) and (ii) are different
 quantities. A defender of the physics models could reasonably say the study is
@@ -1140,9 +1147,9 @@ target is directly observed.
 | Source | Modality | Status | Study role |
 |---|---|---|---|
 | PFF FC 2022 World Cup release | optical | **Unverified.** Access route, availability, licence and contents have *not* been checked. | Intended primary corpus |
-| Metrica Sports sample | optical | **Verified.** Loader implemented and tested against the files. | Development corpus — confirmed too small for inference |
+| Metrica Sports sample | optical | **Verified; adapter implemented and tested.** | Development corpus — confirmed too small for inference |
 | SkillCorner open data | broadcast | **Verified reachable**, structure inspected; loader not yet written. | Broadcast arm of RQ4 |
-| StatsBomb Open Data | event + 360 | **Verified.** Structure inspected; loader not yet written. | Fallback design |
+| StatsBomb Open Data | event + 360 | **Verified; adapter implemented and tested.** | Fallback design — now runnable end to end |
 | `pcc.data.synthetic` | simulated | Generated here. | Instrument validation only |
 
 #### What verification established, and what it costs the design
@@ -1180,16 +1187,52 @@ outcome fields may be used.
 frames** — including **FIFA World Cup 2022**, the same tournament as the PFF
 release. That coincidence is worth more than it first appears: it makes the
 fallback a *same-tournament* comparison, so the velocity-free and
-velocity-bearing analyses could in principle be run on the same matches, which
-turns the "remove velocity" ablation into a measurement rather than a
-simulation. Verified structure: each frame carries `event_uuid`, a
-`visible_area` polygon, and a `freeze_frame` of *visible players only*, each with
-`teammate` / `actor` / `keeper` flags and a location but **no identity**. The
-`visible_area` finding confirms the checklist's central worry: "no defender near
-the destination" can mean "no defender visible", which would bias control
-upward exactly where it matters. Any adapter must use `visible_area` to mark
-destinations outside the covered region rather than treating absence as empty
-space.
+velocity-bearing analyses could in principle be run on the same matches, turning
+the "remove velocity" ablation into a measurement rather than a simulation.
+
+The adapter is implemented, and building it corrected one of this proposal's own
+assumptions and established four design constraints.
+
+*The correction.* This document previously stated that StatsBomb arrival times
+"must be imputed from a ball-speed model". **That is false.** Every pass carries
+a `duration`, and the implied ball speeds (6.9–22.1 m/s, median 13.1) are
+physically plausible. Flight time in the fallback is measured, not modelled —
+one fewer artefact than the design assumed. The remaining caveat is that
+`duration` runs to the related event, which is the flight time for a completed
+pass and an approximation otherwise.
+
+*Four constraints, all verified.*
+
+1. **No velocity at all.** A freeze frame is one snapshot. Every model runs in
+   its zero-velocity form, so the fallback *measures* what the "remove velocity"
+   ablation simulates.
+2. **The camera limits what exists.** 360 frames cover 86.6% of passes; the
+   median frame shows **17 of 22 players** and **no frame shows all 22**. And
+   **16.4% of pass destinations fall outside the `visible_area` polygon**, where
+   "no defender near the destination" means "no defender *visible*". The adapter
+   records `dest_visible` per arrival and flags the rest; treating them as
+   ordinary arrivals would bias control upward precisely where the study looks.
+3. **No exogenous arrivals whatsoever.** Only `Pass` events carry both a start
+   and an end location; clearances, interceptions and duels are single-location
+   events. The quasi-exogenous contrast of Section 14 — the study's strongest
+   identification argument — is therefore *unavailable* on the fallback. Taken
+   with the Metrica finding (11 exogenous arrivals in two matches), this
+   promotes **arrival taxonomy to a first-order criterion** for choosing the
+   primary corpus, ahead of raw match count.
+4. **The derived label is sound where it can be checked.** It agrees with the
+   provider's own outcome on 96.6% of completed passes. On *incomplete* passes
+   the two diverge — roughly half of failed passes still end with the same team
+   in control a second later — which is not error but Section 7.2's construct
+   distinction made visible.
+
+*A cross-provider incomparability that must be handled.* For Metrica, a failed
+pass's realised arrival point is **where the defender intervened**; for
+StatsBomb, `pass.end_location` on an incomplete pass is **where the ball was
+aimed or ended up**. The two providers therefore place "the arrival" at
+different points for the same kind of event. Pooling them without adjustment
+would mix two different estimands, and any multi-provider corpus must either
+harmonise this or stratify on it. This was not anticipated and is the clearest
+argument for building the corpus from a single provider where possible.
 
 #### A methodological note on the availability check
 
@@ -1916,6 +1959,14 @@ the error enters. That argument survives the objection.
   rather than coding stoppages as failures; where feasible, a hand-labelled
   sample to estimate label-noise rates, which also gives a floor on achievable
   calibration.
+- **Censoring is itself selective.** Excluding arrivals whose horizon window
+  overlaps a stoppage is the right treatment — coding them as failures would
+  bias every model downward — but fouls are not randomly distributed, so the
+  exclusion removes a non-random slice, concentrated in contested areas. On the
+  StatsBomb corpus the censored fraction is about 1% at a one-second horizon and
+  rises with the horizon. *Mitigation:* report the censored fraction with every
+  result and per horizon, and check that the headline conclusions hold when
+  censored arrivals are instead coded as losses (a bound, not an estimate).
 - **Leakage.** *Mitigation:* group splits, assertions, a committed audit table.
 - **Analyst degrees of freedom.** *Mitigation:* the protocol is code; the config
   is hashed into every manifest; subgroups and horizons are pre-registered.
@@ -2381,12 +2432,21 @@ territory.
 - RQ4 (tracking modality) — requires a second modality.
 - Body orientation and pose — requires data most corpora lack.
 
-**The pre-registered fallback.** If tracking access fails, pivot to the
-freeze-frame design: event data with freeze frames, velocity-free control models,
-imputed arrival times. Same intellectual shape, same clean holdout, larger
-sample, weaker construct. The weakening is itself informative, because it
-coincides exactly with the "remove velocity" ablation — the fallback study
-*measures* what the ablation only simulates.
+**The pre-registered fallback, now implemented.** If tracking access fails,
+pivot to the freeze-frame design: event data with freeze frames and
+velocity-free control models. Arrival times are **measured**, not imputed —
+StatsBomb supplies a pass duration, correcting an earlier assumption here. Same
+intellectual shape, same clean holdout, larger sample, weaker construct. The
+weakening is itself informative, because it coincides exactly with the "remove
+velocity" ablation: the fallback *measures* what the ablation only simulates.
+
+The adapter is written and the whole protocol runs on it end to end, so the
+fallback is no longer a plan — it is an executable alternative that could be
+started tomorrow. Its two costs, both verified: the camera covers only part of
+the pitch (16.4% of destinations fall outside it), and the corpus contains no
+exogenous arrivals, so Section 14's quasi-exogenous identification argument
+cannot be run on it and the selection analysis must rest on reweighting,
+stratification and sensitivity bounds alone.
 
 **The decision point.** Data access must be resolved by month 3. If it is not,
 switch to the fallback rather than waiting, because the preprocessing work is not

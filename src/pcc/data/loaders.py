@@ -175,33 +175,67 @@ def load_skillcorner(
 
 
 def load_statsbomb(
-    root: str | Path, *, config: PreprocessConfig | None = None, competitions: list[int] | None = None
+    root: str | Path,
+    *,
+    config: PreprocessConfig | None = None,
+    competitions: list[int] | None = None,
+    match_ids: list[str] | None = None,
+    label_config=None,
+    require_360: bool = True,
+    max_matches: int | None = None,
 ) -> tuple[list[ArrivalFrame], pd.DataFrame]:
-    """StatsBomb Open Data, used for the freeze-frame fallback design.
+    """StatsBomb Open Data. **Implemented and verified against the files.**
 
-    TODO(access): confirm before use.
-      1. Which competitions carry 360 freeze frames - this is the binding
-         constraint on the fallback design's sample size.
-      2. The freeze-frame coordinate frame and its relation to the event frame.
-      3. The visible-area polygon: freeze frames cover only part of the pitch,
-         so "no defender near the destination" may mean "no defender visible",
-         which would bias control estimates upward exactly where it matters.
-      4. The licence terms governing use and redistribution.
+    This is the study's *fallback* design, and its weaknesses are structural
+    rather than incidental - see :mod:`pcc.data.statsbomb` for what was checked.
+    Two of them shape every result computed from it:
 
-    Design consequence, stated plainly: freeze frames are a single snapshot,
-    so there is **no velocity**. The physics-based models can only be run in
-    their zero-velocity form, and pass arrival time must be imputed from a
-    ball-speed model. The fallback study is therefore not a substitute for the
-    tracking study; it answers a related, weaker question on a larger sample,
-    and the paper must present it as such.
+    * **No velocity.** A freeze frame is one snapshot, so every model runs in
+      its zero-velocity form. The fallback therefore *measures* what the
+      "remove velocity" ablation simulates.
+    * **Only what the camera saw.** The median frame shows 17 of 22 players and
+      roughly one pass destination in six falls outside the ``visible_area``
+      polygon. Those arrivals are flagged ``destination_not_visible`` and
+      carry ``dest_visible = False``; they must be excluded or analysed
+      separately, because for them "no defender near the destination" means "no
+      defender visible".
+
+    Passes without a 360 frame are skipped by default (``require_360``): with no
+    freeze frame there is no state, so no control model can be evaluated.
     """
+    from pcc.data.statsbomb import available_matches, load_match, match_metadata
+
     root = Path(root)
     if not root.exists():
         raise _not_available("statsbomb_open", root)
-    raise NotImplementedError(
-        "load_statsbomb is a scaffold. Complete it against the real files following "
-        "the TODO(access) checklist in its docstring, then remove this guard."
-    )
+
+    matches = available_matches(root)
+    if require_360:
+        matches = [(m, e, f) for m, e, f in matches if f is not None]
+    if match_ids is not None:
+        wanted = {str(m) for m in match_ids}
+        matches = [(m, e, f) for m, e, f in matches if m in wanted]
+    if max_matches:
+        matches = matches[:max_matches]
+    if not matches:
+        raise _not_available("statsbomb_open", root)
+
+    meta = match_metadata(root)
+    frames: list[ArrivalFrame] = []
+    tables: list[pd.DataFrame] = []
+    for mid, events_path, frames_path in matches:
+        info = meta.get(mid, {})
+        f, t = load_match(
+            events_path, frames_path, match_id=mid,
+            competition=info.get("competition", "StatsBomb-Open"),
+            label_config=label_config, require_360=require_360,
+        )
+        if info.get("date"):
+            t["match_date"] = pd.to_datetime(info["date"])
+        frames.extend(f)
+        tables.append(t)
+
+    return frames, pd.concat(tables, ignore_index=True)
 
 
 def load_pff(

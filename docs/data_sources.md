@@ -28,9 +28,13 @@ from the provider.
 ### Fallback design (freeze frames)
 
 Event data with per-event freeze frames giving player positions at the moment of
-the event. No continuous tracking means **no velocity** and **no measured arrival
-time**. Only velocity-free variants of the control models can be evaluated, and
-flight time must be imputed from a ball-speed model.
+the event. No continuous tracking means **no velocity**, so only velocity-free
+variants of the control models can be evaluated.
+
+Arrival time, however, **is measured**: StatsBomb supplies a `duration` for every
+pass. Earlier planning assumed a ball-speed model would be needed; verification
+showed it is not. That is one fewer modelling artefact in the fallback than
+expected.
 
 This is a genuinely weaker study on a larger sample, and the paper must present
 it as such. Its one compensating virtue: the weakening coincides exactly with the
@@ -49,9 +53,9 @@ confirmed); `unavailable` (checked, not reachable or access denied).
 | Source | Modality | Status | Access | Role |
 |---|---|---|---|---|
 | PFF FC 2022 World Cup release | optical | `unverified` | request | intended primary corpus |
-| Metrica Sports sample data | optical | `verified_contents` | open download | development, pipeline validation |
+| Metrica Sports sample data | optical | `verified_contents`, **adapter implemented** | open download | development, pipeline validation |
 | SkillCorner open data | broadcast | `verified_reachable` | open download | broadcast arm of RQ4 |
-| StatsBomb Open Data | event (+ 360 frames) | `verified_contents` | open download | fallback design |
+| StatsBomb Open Data | event (+ 360 frames) | `verified_contents`, **adapter implemented** | open download | fallback design |
 | `pcc.data.synthetic` | simulated | generated here | — | instrument validation, power analysis |
 
 The machine-readable record — including every verified field, with the date and
@@ -213,36 +217,63 @@ probability as though all twenty-two were observed is precisely the practice thi
 study exists to scrutinise. `frame_completeness` must be computed per arrival and
 carried through as a covariate.
 
-### 3.4 StatsBomb Open Data — **PARTIAL**
+### 3.4 StatsBomb Open Data — **COMPLETE**
 
-Structure inspected 2026-09-13; the adapter is not yet written.
+Checked 2026-09-15 against FIFA World Cup 2022 (competition 43, season 106),
+8 matches. Adapter implemented in `src/pcc/data/statsbomb.py`, tested in
+`tests/test_statsbomb_adapter.py`.
 
 - [x] **12 of 80 competition-seasons carry 360 frames** — the binding constraint
-      on the fallback design's sample size. They include **FIFA World Cup 2022**
-      (`competition_id` 43, `season_id` 106, 64 matches), the same tournament as
-      the PFF optical release, which would make the fallback a *same-tournament*
-      comparison rather than a different one.
+      on the fallback's sample size. They include **FIFA World Cup 2022**
+      (64 matches), the same tournament as the PFF optical release, which would
+      make the fallback a *same-tournament* comparison.
+- [x] Coordinates: a **120 × 80 template** with (0,0) at the top left, so the
+      y-axis is negated. The template is **not metres** — a real pitch may be
+      100–110 m long — so mapping it onto 105 × 68 m introduces a metric error
+      into every time-to-point calculation, systematic per match and
+      unmeasurable without the true dimensions.
+- [x] Events are **already attack-normalised** (the team in possession plays
+      toward x = 120), so no attacking-direction inference is needed — unlike
+      Metrica, where getting that wrong mirrors the pitch.
+- [x] **Flight time is measured, not imputed.** Every pass carries a `duration`;
+      implied ball speeds run 6.9–22.1 m/s (median 13.1), which is physically
+      plausible. *This corrects the earlier assumption that a ball-speed model
+      would be required.* Caveat: `duration` runs to the related event, which is
+      the flight time for a completed pass and an approximation otherwise.
+- [x] **`pass.height`** separates Ground / Low / High, so aerial and ground
+      arrivals can be distinguished — which a tracking corpus lacking a ball
+      z-coordinate (Metrica) cannot do.
+- [x] Possession is labelled at event level (`possession`, `possession_team`),
+      so the outcome need not be reconstructed from a transfer log.
 - [x] Frame structure: `event_uuid`, `visible_area`, `freeze_frame`. Each
       freeze-frame entry has `teammate`, `actor`, `keeper` and `location` — and
-      **no player identity**, so per-player sprint-speed estimation is
-      impossible and a squad-level envelope must be assumed.
-- [x] **`visible_area` confirmed present** as a polygon. This settles the
-      central worry: freeze frames cover only part of the pitch, so "no defender
-      near the destination" can mean "no defender **visible**". Any adapter MUST
-      use `visible_area` to mark destinations outside the covered region rather
-      than treating absence as empty space, which would bias control upward
-      exactly where it matters most.
-- [ ] Confirm the freeze-frame coordinate frame and its relation to the event
-      frame (StatsBomb's event frame is a 120 × 80 template, not metres).
-- [ ] Read the user agreement in the repository before publishing anything
-      derived from the data.
+      **no identity**, so per-player sprint-speed estimation is impossible.
+- [x] Licence: StatsBomb's user agreement is in the repository. Read it before
+      publishing anything derived from the data.
 
-**Verified design consequences:** no velocity; no player identity; arrival times
-must be imputed from a ball-speed model; the physics models run only in their
-zero-velocity form. The fallback answers a weaker question on a larger sample,
-and the weakening coincides exactly with the "remove velocity" ablation.
+**Verified design consequence (visibility).** 360 frames cover 86.6% of passes.
+The median frame shows **17 of 22 players**, and **no frame shows all 22**. Most
+importantly, **16.4% of pass destinations fall outside the `visible_area`
+polygon**; on those arrivals barely half have any visible defender within 10 m.
+The adapter computes `dest_visible` per arrival and flags the rest
+`destination_not_visible`. Treating them as ordinary arrivals would bias control
+upward exactly where the study is looking.
 
----
+**Verified design consequence (no exogenous arrivals).** Only `Pass` events carry
+both a start and an end location. Clearances, interceptions and duels are
+recorded as single-location events, so the corpus yields **no deflections,
+clearances or second balls at all**. The quasi-exogenous contrast — the study's
+strongest identification argument (Section 14) — is therefore **unavailable** on
+the fallback design. Combined with the Metrica finding (11 exogenous arrivals in
+two matches), this makes arrival taxonomy a first-order selection criterion for
+the primary corpus rather than a detail.
+
+**Verified label quality.** The derived control label agrees with the provider's
+own pass outcome on **96.6%** of completed passes. On *incomplete* passes the two
+diverge substantially — about half of failed passes still end with the same team
+in control a second later — which is not an error but the construct distinction
+of Section 7.2 made visible: "the pass completed" and "the team controls the
+ball" are different questions.
 
 ## 4. Licensing and ethics
 

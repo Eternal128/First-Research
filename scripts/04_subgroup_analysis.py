@@ -26,7 +26,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from pcc.evaluation import spatial_calibration_map, stratified_metrics  # noqa: E402
 
 SUBGROUPS = ("zone", "third", "pass_length_band", "pressure_band", "game_state",
-             "flight_band", "arrival_type", "tracking_source", "quality_flag")
+             "flight_band", "arrival_type", "tracking_source", "quality_flag",
+             # Freeze-frame corpora only: whether the camera actually covered the
+             # destination, and the ball height. Both are pre-registered because
+             # they are the axes on which the fallback design is expected to be
+             # weakest, not because they were found to be interesting.
+             "dest_visible", "pass_height")
 
 
 
