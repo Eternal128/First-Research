@@ -54,7 +54,7 @@ confirmed); `unavailable` (checked, not reachable or access denied).
 |---|---|---|---|---|
 | PFF FC 2022 World Cup release | optical | `unverified` | request | intended primary corpus |
 | Metrica Sports sample data | optical | `verified_contents`, **adapter implemented** | open download | development, pipeline validation |
-| SkillCorner open data | broadcast | `verified_reachable` | open download | broadcast arm of RQ4 |
+| SkillCorner open data | broadcast | `verified_contents`, **adapter implemented** | open download | broadcast arm of RQ4 |
 | StatsBomb Open Data | event (+ 360 frames) | `verified_contents`, **adapter implemented** | open download | fallback design |
 | `pcc.data.synthetic` | simulated | generated here | — | instrument validation, power analysis |
 
@@ -176,46 +176,76 @@ three-way match-level split is impossible, so RQ5 cannot be run on it. This is a
 development corpus, confirmed, not predicted. `scripts/03_main_analysis.py`
 prints a prominent warning and labels such a run a pipeline demonstration.
 
-### 3.3 SkillCorner open data — **PARTIAL**
+### 3.3 SkillCorner open data — **COMPLETE**
 
-Structure inspected 2026-09-13; the adapter is not yet written.
+Checked 2026-09-15 on four LFS-resolved A-League 2024/25 matches. Adapter in
+`src/pcc/data/skillcorner.py`, tested in `tests/test_skillcorner_adapter.py`.
 
-- [x] **Git LFS.** Tracking files are LFS pointers. A plain clone yields
-      ~130-byte stubs. `scripts/fetch_data.py` fetches the real bytes (~90 MB
-      per match) from `media.githubusercontent.com` and verifies that what
-      arrived is not a pointer.
-- [x] Coverage: 20 match directories, Australian A-League 2024/25. The README
-      says 10 matches; **reconcile this discrepancy before quoting a corpus
-      size.**
-- [x] Per-frame `possession` object (`player_id`, `group`) is present — a
-      frame-level possession label, which earlier planning listed as unknown.
-- [x] Off-camera representation: frames carry `image_corners_projection`, and
-      pre-kickoff/off-camera frames have null ball data and an empty
-      `player_data` list, so absence is explicit rather than silent.
-- [ ] Confirm the frame rate and whether it is constant.
-- [ ] Confirm exactly how a *partially* visible frame is represented — which
-      players appear in `player_data` and whether a visibility flag accompanies
-      them. This determines the `att_observed`/`def_observed` masks that drive
-      the whole RQ4 analysis.
-- [ ] Confirm whether the ball track has the same gaps as the player tracks.
+- [x] **Git LFS.** Tracking files are LFS pointers in a plain clone (~130-byte
+      stubs). `scripts/fetch_data.py` fetches the real ~90 MB per match from
+      `media.githubusercontent.com`; the adapter raises an actionable error on a
+      stub rather than failing obscurely later.
+- [x] **Coordinates are already centred metres**, and `match.json` supplies the
+      **true pitch dimensions** (105 × 68 m for the match checked) rather than a
+      template — the only one of the three providers to do so.
+- [x] **Attacking direction is stated, not inferred**: `home_team_side` gives it
+      per period. Cross-checked against goalkeeper positions and confirmed.
+- [x] **Frames are a global 10 Hz clock**, monotone across the match
+      (`match_periods` gives the ranges). The *timestamps* are not safe: period 2
+      restarts at 45:00 while period 1 ran to 48:18, so they overlap.
+- [x] **Ball height (`ball_data.z`) is present** — Metrica has none.
+- [x] Per-frame `possession.group` is supplied, but is **null in ~45% of
+      frames**, so the label is sparse.
 - [x] Licence read: released with PySport; the repository asks that SkillCorner
       be credited.
 
-**Contamination warning.** The `dynamic_events.csv` is a derived-metrics product
-carrying SkillCorner's own `xpass_completion`, EPV and pressure measures. Using
-any of those as model inputs would contaminate the comparison — they already
-encode a fitted answer to a closely related question. Only raw positional and
-outcome fields may be used.
+**Verified design consequence (extrapolation).** Every frame's `player_data`
+lists all 22 players, but each carries an `is_detected` flag and only **12.7 per
+frame are actually detected** (median 14). **13.8% of frames have none detected
+at all**, and the ball is detected in only **60.4%**. The file is named
+`tracking_extrapolated` because the provider fills the rest in.
 
-**Methodological warning.** Imputing missing players and then reporting a
-control probability as though all twenty-two were observed is precisely the
-practice this study exists to scrutinise. `frame_completeness` must be computed
-per arrival and carried through as a covariate.
+This is the hazard the study exists to examine, so the adapter keeps the
+distinction: extrapolated players remain in the state (a model in the field
+would see them) while `att_observed` / `def_observed` and `frame_completeness`
+record what was genuinely observed. That makes a **within-corpus** contrast
+available — well-observed against poorly-observed arrivals, holding competition,
+season and provider fixed — which is stronger evidence for RQ4 than the
+across-corpus comparison can be. On four matches the completeness bands show no
+clear signal; that is a statement about the sample size, not about the effect.
 
-**Methodological warning.** Imputing missing players and then reporting a control
-probability as though all twenty-two were observed is precisely the practice this
-study exists to scrutinise. `frame_completeness` must be computed per arrival and
-carried through as a covariate.
+**Contamination control.** `dynamic_events.csv` carries SkillCorner's own
+`xpass_completion`, `xthreat`, `possession_epv_*`, `reception_difficulty` and
+`overall_pressure` columns — fitted answers to closely related questions. The
+adapter reads only an enumerated list of **structural** columns
+(`STRUCTURAL_COLUMNS`), and a test asserts that the modelled ones are excluded.
+
+**Two coordinate traps, both found the hard way.** Event coordinates are
+**already attack-normalised** (each event expressed with the acting team playing
+toward +x) while tracking is in a fixed match frame: correlation between the two
+is exactly −1.000 for the team attacking right-to-left. Applying the canonical
+rotation on top mirrors one team every period. And after a *failed* pass the next
+possession belongs to the opponent, whose coordinates use the opposite
+normalisation, so the destination must be converted with the **next** event's
+`attacking_side`.
+
+Both bugs are close to invisible: base rates, pass lengths, flight times and
+outcome orderings all survived them intact. The only symptom was mean pass
+progression reading −0.59 m and then +0.71 m instead of +4.16 m. The guard in
+`_check_direction_of_play` is now set at +1.5 m, calibrated from these observed
+failures — all three corpora sit between +3.9 and +4.2 m.
+
+**Arrival extraction.** A `player_possession` row ending in `end_type='pass'`
+gives the release; the *next* `player_possession` row gives the arrival frame
+and point. Validated: for successful passes the next possession's start lies
+within 1 m of the provider's stated reception point in 95.4% of cases (median
+difference 0.00 m). The provider's reception coordinates are **not** used,
+because they are populated only for successful passes — taking them would
+restrict the corpus to passes that worked and leave nothing to calibrate
+against.
+
+**Exogenous arrivals:** `end_type='clearance'` yields about 5 per match (19
+across four matches). Thin, but non-zero — unlike StatsBomb, which has none.
 
 ### 3.4 StatsBomb Open Data — **COMPLETE**
 

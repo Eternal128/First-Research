@@ -31,7 +31,9 @@ SUBGROUPS = ("zone", "third", "pass_length_band", "pressure_band", "game_state",
              # destination, and the ball height. Both are pre-registered because
              # they are the axes on which the fallback design is expected to be
              # weakest, not because they were found to be interesting.
-             "dest_visible", "pass_height")
+             "dest_visible", "pass_height",
+             # Broadcast/freeze-frame corpora: how much of the frame was observed.
+             "completeness_band")
 
 
 

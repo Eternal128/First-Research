@@ -144,34 +144,61 @@ def load_metrica(
 
 
 def load_skillcorner(
-    root: str | Path, *, config: PreprocessConfig | None = None, match_ids: list[str] | None = None
+    root: str | Path,
+    *,
+    config: PreprocessConfig | None = None,
+    match_ids: list[str] | None = None,
+    label_config=None,
+    max_matches: int | None = None,
+    **tracking_kwargs,
 ) -> tuple[list[ArrivalFrame], pd.DataFrame]:
-    """SkillCorner open broadcast-derived tracking.
+    """SkillCorner open broadcast tracking. **Implemented and verified.**
 
-    TODO(access): confirm before use.
-      1. How unobserved (off-camera) players are represented - missing rows,
-         null coordinates, or an explicit visibility flag. This determines the
-         ``att_observed`` / ``def_observed`` masks, which drive the RQ4 analysis.
-      2. Whether the ball track has the same gaps as the player tracks.
-      3. Frame rate and whether it is constant.
-      4. Which event stream, if any, accompanies the tracking; if none, arrivals
-         must be detected from the ball track itself (a change in ball
-         acceleration plus proximity to a player), which is a separate and
-         error-prone step that needs its own validation against a hand-labelled
-         sample.
+    The RQ4 arm. See :mod:`pcc.data.skillcorner` for what was checked; the three
+    properties that matter here:
 
-    Note: with broadcast tracking, ``frame_completeness`` must be computed per
-    arrival and carried through. Imputing the missing players and then reporting
-    a control probability as though all 22 were observed is exactly the practice
-    this study is meant to scrutinise.
+    * **Extrapolated, not observed.** Every frame lists all 22 players, but only
+      about half are actually detected. The adapter keeps the distinction:
+      extrapolated players stay in the state (a model in the field would see
+      them) while ``att_observed`` / ``def_observed`` and
+      ``frame_completeness`` record what was really seen. That within-corpus
+      contrast is stronger evidence than the across-corpus one, because it holds
+      the competition and the provider fixed.
+    * **Only structural event fields are read.** The dynamic-events file also
+      carries SkillCorner's own expected-pass, expected-threat and
+      possession-value columns; using them as inputs would contaminate the
+      comparison, so the permitted set is enumerated and enforced.
+    * **Git LFS.** A plain clone yields pointer stubs. Matches whose tracking is
+      unresolved are skipped by :func:`~pcc.data.skillcorner.available_matches`,
+      and parsing a stub raises an actionable error rather than failing later.
     """
+    from pcc.data.skillcorner import available_matches, load_match
+
     root = Path(root)
     if not root.exists():
         raise _not_available("skillcorner_open", root)
-    raise NotImplementedError(
-        "load_skillcorner is a scaffold. Complete it against the real files following "
-        "the TODO(access) checklist in its docstring, then remove this guard."
-    )
+
+    matches = available_matches(root)
+    if match_ids is not None:
+        wanted = {str(m) for m in match_ids}
+        matches = [m for m in matches if m.name in wanted]
+    if max_matches:
+        matches = matches[:max_matches]
+    if not matches:
+        raise _not_available("skillcorner_open", root)
+
+    if config is not None:
+        tracking_kwargs.setdefault("max_gap_s", config.max_occlusion_gap_s)
+        tracking_kwargs.setdefault("speed_cap", config.speed_cap)
+
+    frames: list[ArrivalFrame] = []
+    tables: list[pd.DataFrame] = []
+    for match_dir in matches:
+        f, t = load_match(match_dir, label_config=label_config, **tracking_kwargs)
+        frames.extend(f)
+        tables.append(t)
+
+    return frames, pd.concat(tables, ignore_index=True)
 
 
 def load_statsbomb(

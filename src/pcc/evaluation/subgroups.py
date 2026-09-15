@@ -64,6 +64,18 @@ def add_subgroups(df: pd.DataFrame, *, pitch: Pitch = Pitch()) -> pd.DataFrame:
         )
     else:
         out["game_state"] = "unknown"
+    # Tracking completeness. The primary within-corpus axis for RQ4: comparing
+    # well-observed against poorly-observed arrivals inside one corpus holds the
+    # competition, the provider and the season fixed, which the across-corpus
+    # optical-versus-broadcast contrast cannot do.
+    if "frame_completeness" in out.columns:
+        out["completeness_band"] = _band(
+            out["frame_completeness"], [(0.0, 0.6), (0.6, 0.75), (0.75, 0.9), (0.9, 1.01)],
+            ["<60%", "60-75%", "75-90%", "90%+"],
+        )
+    else:
+        out["completeness_band"] = "unknown"
+
     out["flight_band"] = _band(
         out["flight_time"], [(0, 0.5), (0.5, 1.0), (1.0, 1.5), (1.5, 99)],
         ["<0.5s", "0.5-1s", "1-1.5s", "1.5s+"],

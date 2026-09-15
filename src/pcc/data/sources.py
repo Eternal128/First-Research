@@ -200,7 +200,7 @@ SOURCES: dict[str, DataSource] = {
             "player_tracking", "ball_tracking", "event_data",
             "possession_outcome", "match_metadata",
         ),
-        status="verified_reachable",
+        status="verified_contents",
         url="https://github.com/SkillCorner/opendata",
         probe_url="https://raw.githubusercontent.com/SkillCorner/opendata/master/data/matches.json",
         access="open_download",
@@ -231,17 +231,32 @@ SOURCES: dict[str, DataSource] = {
             "VERIFIED: frames carry `image_corners_projection`, and early frames have "
             "null ball and empty player_data - off-camera and pre-kickoff periods are "
             "explicitly represented rather than silently absent.",
-            "The 'dynamic events' file is a derived-metrics product carrying "
-            "SkillCorner's own xpass_completion, EPV and pressure measures. Using "
-            "those as inputs would contaminate the comparison; only raw positional "
-            "and outcome fields may be used.",
+            "VERIFIED: the 'dynamic events' file is a derived-metrics product "
+            "carrying SkillCorner's own xpass_completion, xthreat, EPV and pressure "
+            "columns. Using those as inputs would contaminate the comparison. The "
+            "adapter reads only an enumerated list of structural columns.",
+            "VERIFIED: event coordinates are ALREADY attack-normalised (each event "
+            "expressed with the acting team playing toward +x) while tracking is in a "
+            "fixed match frame - correlation is exactly -1.000 for the team attacking "
+            "right-to-left. Applying the canonical rotation to event coordinates "
+            "without undoing this mirrors one team every period.",
+            "VERIFIED: after a failed pass the next possession belongs to the "
+            "opponent, whose coordinates use the opposite normalisation. The "
+            "destination must be converted with the NEXT event's attacking_side, not "
+            "the passer's.",
+            "VERIFIED: match.json states the true pitch dimensions and the attacking "
+            "direction per period (home_team_side), so neither has to be inferred - "
+            "unusual among the three providers.",
+            "VERIFIED: the frame index is the safe clock (global, 10 Hz, monotone). "
+            "Timestamps overlap between periods: period 2 restarts at 45:00 while "
+            "period 1 ran to 48:18.",
             "Comparing calibration against optical tracking confounds measurement "
             "quality with the different matches and competitions covered; the "
             "degradation-simulation ablation is required to separate the two.",
         ),
         loader="load_skillcorner",
         verified_fields={
-            "checked_on": "2026-09-13",
+            "checked_on": "2026-09-15",
             "match_directories": 20,
             "competition": "Australian A-League 2024/25",
             "tracking_storage": "git-lfs",
@@ -252,6 +267,19 @@ SOURCES: dict[str, DataSource] = {
                 "{id}_match.json", "{id}_tracking_extrapolated.jsonl",
                 "{id}_dynamic_events.csv", "{id}_phases_of_play.csv",
             ],
+            "fps": 10.0,
+            "frames_per_match": 60301,
+            "coordinates": "centred metres; true pitch dimensions in match.json",
+            "attacking_direction": "stated per period in match.json home_team_side",
+            "detected_players_per_frame_mean": 12.7,
+            "frames_with_zero_detections": 0.138,
+            "ball_detected_frac": 0.604,
+            "possession_null_frac": 0.45,
+            "event_coords_attack_normalised": True,
+            "arrivals_4_matches": 3350,
+            "exogenous_arrivals_4_matches": 19,
+            "provider_velocity": False,
+            "ball_z_present": True,
         },
     ),
     "statsbomb_open": DataSource(

@@ -465,10 +465,24 @@ def _check_direction_of_play(table: pd.DataFrame, *, min_rows: int = 200) -> Non
     if len(table) < min_rows:
         return
     progression = float((table["dest_x"] - table["origin_x"]).mean())
-    if progression < -2.0:
+    # Threshold at +1.5 m, not a negative number. Teams pass forward on net, and
+    # the three corpora checked here all sit between +2.0 and +4.2 m, so a match
+    # averaging below +1.5 m is already anomalous. The bar is set from observed
+    # failures rather than intuition: two real mirroring bugs produced -0.59 m
+    # and +0.71 m, and an earlier -2.0 m threshold caught neither. Mirroring is
+    # otherwise close to invisible - base rates, pass lengths, flight times and
+    # outcome orderings all survive it intact.
+    #
+    # A false positive here costs one investigation; a false negative silently
+    # swaps the half-spaces in every spatial result. Hence a warning, with the
+    # likely causes named, rather than an exception.
+    if progression < 1.5:
         warnings.warn(
-            f"mean pass progression is {progression:.1f} m (strongly backward). "
-            "The attacking-direction inference is probably mirrored; check "
-            "infer_attack_sign against this provider's coordinate convention.",
+            f"mean pass progression is {progression:+.2f} m, which is not clearly "
+            "forward. The corpora checked for this study sit between +2.0 and +4.2 m. "
+            "The most likely cause is a "
+            "mirrored pitch: either the attacking-direction inference is wrong, or "
+            "the provider's event coordinates are ALREADY attack-normalised and the "
+            "rotation has been applied twice.",
             stacklevel=3,
         )

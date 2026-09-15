@@ -1148,7 +1148,7 @@ target is directly observed.
 |---|---|---|---|
 | PFF FC 2022 World Cup release | optical | **Unverified.** Access route, availability, licence and contents have *not* been checked. | Intended primary corpus |
 | Metrica Sports sample | optical | **Verified; adapter implemented and tested.** | Development corpus — confirmed too small for inference |
-| SkillCorner open data | broadcast | **Verified reachable**, structure inspected; loader not yet written. | Broadcast arm of RQ4 |
+| SkillCorner open data | broadcast | **Verified; adapter implemented and tested.** | Broadcast arm of RQ4 — now runnable |
 | StatsBomb Open Data | event + 360 | **Verified; adapter implemented and tested.** | Fallback design — now runnable end to end |
 | `pcc.data.synthetic` | simulated | Generated here. | Instrument validation only |
 
@@ -1172,16 +1172,40 @@ open passes 0.93, clearances 0.23, interceptions 0.15.
 
 **SkillCorner** differs substantially from the description this proposal
 originally carried. It is 20 match directories of Australian A-League 2024/25,
-not nine matches of European football, and it now ships a derived-events file, a
-phases-of-play file and 3D body pose for two matches. Two consequences. First,
-the tracking JSONL **does** carry a per-frame `possession` object, which the
-checklist had listed as unknown. Second, the tracking files are **Git LFS
-pointers**: a plain clone yields ~130-byte stubs, and the real bytes must be
-fetched from `media.githubusercontent.com`. An adapter written against the stubs
-would fail confusingly far downstream. Note also that the derived-events file
-carries SkillCorner's own pass-completion and possession-value models; using
-those as inputs would contaminate the comparison, so only raw positional and
-outcome fields may be used.
+not nine matches of European football, and it ships a derived-events file, a
+phases-of-play file and 3D body pose for two matches. The adapter is now
+implemented, and three things it established change how this corpus is used.
+
+*It is the best-documented of the three.* `match.json` states the **true pitch
+dimensions** and the **attacking direction per period**, so neither has to be
+inferred — the only provider here for which that is true, and a direct
+protection against the mirroring failure that bit the Metrica adapter. Ball
+height is present, which Metrica lacks. Frames form a global 10 Hz clock; the
+*timestamps*, by contrast, overlap between periods and must not be used as one.
+
+*Its tracking is extrapolated, and says so.* Every frame lists all 22 players,
+but each carries an `is_detected` flag and only **12.7 per frame are actually
+detected**; 13.8% of frames have none, and the ball is detected in 60.4%. This
+is exactly the practice the study scrutinises, so the adapter preserves the
+distinction rather than resolving it: extrapolated players stay in the state,
+because a model in the field would see them, while `frame_completeness` records
+what was genuinely observed. **That yields a within-corpus contrast — well- against
+poorly-observed arrivals, holding competition, season and provider fixed — which
+is stronger evidence for RQ4 than the across-corpus comparison can ever be**,
+and it was not part of the original design. On four matches it shows no clear
+signal, which is a statement about sample size rather than about the effect.
+
+*Its event coordinates are a trap.* They are already attack-normalised while the
+tracking is in a fixed match frame (correlation exactly −1.000 for the team
+attacking right-to-left), and after a failed pass the next possession uses the
+*opponent's* normalisation. Both mistakes mirror the pitch while leaving base
+rates, pass lengths, flight times and outcome orderings entirely intact; the
+only symptom was mean pass progression reading −0.59 m and then +0.71 m instead
+of +4.16 m. The guard is now calibrated from those observed failures at +1.5 m,
+against the +3.9 to +4.2 m the three corpora actually show. Note also that the
+derived-events file carries SkillCorner's own expected-pass and possession-value
+columns; the adapter reads an enumerated list of structural fields only, and a
+test enforces it.
 
 **StatsBomb** has 80 competition-seasons, of which **12 carry 360 freeze
 frames** — including **FIFA World Cup 2022**, the same tournament as the PFF
@@ -2125,6 +2149,40 @@ rather than fitted to it.
 Patterns 2, 7 and 14 are, in our judgement, the most likely combination. Stating
 that guess in advance is a discipline, not a prediction: if the data say
 otherwise, the record shows we were wrong rather than that we always expected it.
+
+### 20.1 An early observation, offered as a demonstration and not a finding
+
+With all three adapters implemented, the same protocol has been run across
+optical tracking (2 matches), broadcast tracking (4) and freeze frames (8). The
+physics-based model behaves like this:
+
+| Modality | Matches | AUC | Brier | CORP MCB | Calibration slope |
+|---|---|---|---|---|---|
+| Optical (Metrica) | 2 | 0.925 | 0.071 | 0.007 | 1.317 |
+| Broadcast (SkillCorner) | 4 | 0.846 | 0.106 | 0.021 | 0.515 |
+| Freeze frame (StatsBomb) | 8 | 0.792 | 0.145 | 0.071 | 0.331 |
+
+**None of this is a result.** Two, four and eight matches are two, four and eight
+bootstrap clusters; the corpora differ in competition, season and provider as
+well as in modality, so the contrast confounds measurement quality with the
+football being played; and no interval computed on them would mean anything.
+
+It is nonetheless worth recording what the numbers would mean if they survived a
+real corpus, because it is the study's thesis in one table. As observability
+degrades, **discrimination falls modestly while calibration collapses**: AUC
+drops about 14%, which an evaluation using AUC alone would report as mild
+degradation, while miscalibration rises roughly tenfold and the calibration
+slope falls from 1.3 to 0.33. If that pattern holds, the practical
+recommendation follows immediately and is sharper than "recalibrate": *the worse
+your tracking, the less you may trust the values — and the amount you may trust
+them is not visible in any discrimination metric you are likely to be
+reporting.*
+
+The one anomaly worth flagging now is the optical slope of 1.32, the only
+value above one and therefore the only corpus where the model is
+*under*-confident. On two matches that is as likely to be noise as signal, and
+it is exactly the kind of result that a pre-registered directional prediction
+(H1b predicts `b < 1`) exists to stop us explaining after the fact.
 
 ---
 
