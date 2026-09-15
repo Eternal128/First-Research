@@ -55,11 +55,77 @@ def outdir(name: str, *, config: dict | None = None) -> Path:
 
 
 
-def load_corpus(source: str, config: dict, *, root: str | None = None):
+
+def _corpus_cache_key(source: str, root: str, label_cfg, config: dict) -> str:
+    """Hash of everything that changes what the parsed corpus contains.
+
+    Deliberately includes the raw-data fingerprint (file count, total size and
+    latest mtime) as well as the label and preprocessing settings, so adding
+    matches to ``data/raw`` invalidates the cache rather than silently serving a
+    stale, smaller corpus - which would be a very quiet way to report results
+    from the wrong sample.
+    """
+    import hashlib
+    import json
+    from pathlib import Path
+
+    files = sorted(p for p in Path(root).rglob("*") if p.is_file())
+    fingerprint = {
+        "n_files": len(files),
+        "total_bytes": sum(p.stat().st_size for p in files),
+        "latest_mtime": max((p.stat().st_mtime_ns for p in files), default=0),
+    }
+    payload = {
+        "source": source,
+        "fingerprint": fingerprint,
+        "label": {"definition": label_cfg.definition, "horizon": label_cfg.horizon,
+                  "censor": label_cfg.censor_on_stoppage},
+        "preprocess": config.get("preprocess", {}),
+        "schema_version": 2,
+    }
+    return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()[:16]
+
+
+def _load_with_cache(source: str, root: str, label_cfg, config: dict, *, use_cache: bool = True):
+    """Parse a corpus, caching the result under the scratch cache directory."""
+    import pandas as pd
+
+    from pcc.data import load_source
+    from pcc.data.tracking import load_frames, save_frames
+
+    cache_dir = REPO_ROOT / "results" / "cache"
+    key = _corpus_cache_key(source, root, label_cfg, config)
+    table_path = cache_dir / f"{source}_{key}.csv"
+    frames_path = cache_dir / f"{source}_{key}.npz"
+
+    if use_cache and table_path.exists() and frames_path.exists():
+        try:
+            arrivals = pd.read_csv(table_path)
+            frames = load_frames(frames_path)
+            if len(frames) == len(arrivals):
+                print(f"  (cache hit: {len(arrivals)} arrivals from {table_path.name})")
+                return frames, arrivals
+            print("  (cache discarded: frame/table length mismatch)")
+        except Exception as exc:
+            print(f"  (cache unreadable, re-parsing: {type(exc).__name__})")
+
+    frames, arrivals = load_source(source, root=root, label_config=label_cfg)
+    if use_cache:
+        try:
+            cache_dir.mkdir(parents=True, exist_ok=True)
+            arrivals.to_csv(table_path, index=False)
+            save_frames(frames, frames_path)
+        except Exception as exc:  # caching is a convenience, never a hard failure
+            print(f"  (cache write failed: {type(exc).__name__}: {exc})")
+    return frames, arrivals
+
+
+def load_corpus(source: str, config: dict, *, root: str | None = None, use_cache: bool = True):
     """Load a corpus and apply the study's inclusion criteria and subgroups.
 
     One code path for every source, so an analysis script never needs to know
-    which provider produced the data. Returns ``(frames, arrivals_table)`` with
+    which provider produced the data. Parsing is cached on disk (see
+    :func:`_load_with_cache`); pass ``use_cache=False`` to force a re-parse. Returns ``(frames, arrivals_table)`` with
     the table reset to a contiguous index that matches the frame list
     positionally - every downstream split indexes both by position, so the two
     must not drift apart.
@@ -86,7 +152,9 @@ def load_corpus(source: str, config: dict, *, root: str | None = None):
     else:
         if root is None:
             root = str(DATA_RAW / source)
-        frames, arrivals = load_source(source, root=root, label_config=label_cfg)
+        frames, arrivals = _load_with_cache(
+            source, root, label_cfg, config, use_cache=use_cache
+        )
 
     prov = Provenance()
     pp = PreprocessConfig(**config.get("preprocess", {}))

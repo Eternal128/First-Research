@@ -249,8 +249,10 @@ across four matches). Thin, but non-zero — unlike StatsBomb, which has none.
 
 ### 3.4 StatsBomb Open Data — **COMPLETE**
 
-Checked 2026-09-15 against FIFA World Cup 2022 (competition 43, season 106),
-8 matches. Adapter implemented in `src/pcc/data/statsbomb.py`, tested in
+Checked 2026-09-15 against **179 matches across three competitions** — FIFA
+World Cup 2022 (43/106, 64 matches), UEFA Euro 2024 (55/282, 51) and Women's
+World Cup 2023 (72/107, 64). 151,418 arrivals extracted, 137,545 after the
+inclusion criteria. Adapter in `src/pcc/data/statsbomb.py`, tested in
 `tests/test_statsbomb_adapter.py`.
 
 - [x] **12 of 80 competition-seasons carry 360 frames** — the binding constraint
@@ -281,10 +283,19 @@ Checked 2026-09-15 against FIFA World Cup 2022 (competition 43, season 106),
 - [x] Licence: StatsBomb's user agreement is in the repository. Read it before
       publishing anything derived from the data.
 
-**Verified design consequence (visibility).** 360 frames cover 86.6% of passes.
-The median frame shows **17 of 22 players**, and **no frame shows all 22**. Most
-importantly, **16.4% of pass destinations fall outside the `visible_area`
-polygon**; on those arrivals barely half have any visible defender within 10 m.
+**Verified design consequence (visibility).** Measured over **179 matches**
+(World Cup 2022, Euro 2024, Women's World Cup 2023): 360 frames cover **83.9%**
+of passes, the median pass event shows **16 of 22 players**, and all 22 are
+visible at roughly **1 arrival in 2,500**. Most importantly, **21% of pass
+destinations fall outside the `visible_area` polygon**; on those arrivals barely
+half have any visible defender within 10 m.
+
+*A correction worth recording.* The first version of this section reported 86.6%
+coverage, a median of 17, and "no frame shows all 22" — all three measured on a
+single match, and all three wrong at scale. The all-22 claim was the worst of
+them: it was a categorical statement resting on one match, and a test asserting
+it failed as soon as the corpus grew. Small-sample over-claiming is the failure
+mode this study is about, and it is not immune to it.
 The adapter computes `dest_visible` per arrival and flags the rest
 `destination_not_visible`. Treating them as ordinary arrivals would bias control
 upward exactly where the study is looking.

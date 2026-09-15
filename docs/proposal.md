@@ -1230,9 +1230,10 @@ pass and an approximation otherwise.
 1. **No velocity at all.** A freeze frame is one snapshot. Every model runs in
    its zero-velocity form, so the fallback *measures* what the "remove velocity"
    ablation simulates.
-2. **The camera limits what exists.** 360 frames cover 86.6% of passes; the
-   median frame shows **17 of 22 players** and **no frame shows all 22**. And
-   **16.4% of pass destinations fall outside the `visible_area` polygon**, where
+2. **The camera limits what exists.** Over 179 matches, 360 frames cover
+   **83.9%** of passes; the median pass event shows **16 of 22 players**, and all
+   22 are visible at about **1 arrival in 2,500**. And **21% of pass
+   destinations fall outside the `visible_area` polygon**, where
    "no defender near the destination" means "no defender *visible*". The adapter
    records `dest_visible` per arrival and flags the rest; treating them as
    ordinary arrivals would bias control upward precisely where the study looks.
@@ -2150,39 +2151,141 @@ Patterns 2, 7 and 14 are, in our judgement, the most likely combination. Stating
 that guess in advance is a discipline, not a prediction: if the data say
 otherwise, the record shows we were wrong rather than that we always expected it.
 
-### 20.1 An early observation, offered as a demonstration and not a finding
+### 20.1 First powered results — on the fallback design only
 
-With all three adapters implemented, the same protocol has been run across
-optical tracking (2 matches), broadcast tracking (4) and freeze frames (8). The
-physics-based model behaves like this:
+A corpus large enough to support inference now exists for the **freeze-frame
+fallback**: 179 StatsBomb 360 matches across three competitions (FIFA World Cup
+2022, UEFA Euro 2024, Women's World Cup 2023), giving **137,545 arrivals** after
+the inclusion criteria, with 53 matches in the test fold. Intervals below are
+cluster bootstraps over 1,000 replicates resampling whole matches.
 
-| Modality | Matches | AUC | Brier | CORP MCB | Calibration slope |
-|---|---|---|---|---|---|
-| Optical (Metrica) | 2 | 0.925 | 0.071 | 0.007 | 1.317 |
-| Broadcast (SkillCorner) | 4 | 0.846 | 0.106 | 0.021 | 0.515 |
-| Freeze frame (StatsBomb) | 8 | 0.792 | 0.145 | 0.071 | 0.331 |
+#### The scope limit, stated first because it governs everything after it
 
-**None of this is a result.** Two, four and eight matches are two, four and eight
-bootstrap clusters; the corpora differ in competition, season and provider as
-well as in modality, so the contrast confounds measurement quality with the
-football being played; and no interval computed on them would mean anything.
+> These results describe the **velocity-free, camera-limited** variant of each
+> model, not the published full-tracking versions. A freeze frame is one
+> snapshot, so no model here has access to velocity; and the camera sees a
+> median of 16 of 22 players, with 21% of destinations outside the covered
+> region. **This does not test whether published pitch-control models are
+> calibrated.** It tests what happens to them under the data conditions most
+> clubs and researchers outside the elite tier actually face — which is a
+> different question, and one worth answering, but it must not be reported as
+> the first.
 
-It is nonetheless worth recording what the numbers would mean if they survived a
-real corpus, because it is the study's thesis in one table. As observability
-degrades, **discrimination falls modestly while calibration collapses**: AUC
-drops about 14%, which an evaluation using AUC alone would report as mild
-degradation, while miscalibration rises roughly tenfold and the calibration
-slope falls from 1.3 to 0.33. If that pattern holds, the practical
-recommendation follows immediately and is sharper than "recalibrate": *the worse
-your tracking, the less you may trust the values — and the amount you may trust
-them is not visible in any discrimination metric you are likely to be
-reporting.*
+#### RQ1, RQ2 — calibration and the baseline comparison
 
-The one anomaly worth flagging now is the optical slope of 1.32, the only
-value above one and therefore the only corpus where the model is
-*under*-confident. On two matches that is as likely to be noise as signal, and
-it is exactly the kind of result that a pre-registered directional prediction
-(H1b predicts `b < 1`) exists to stop us explaining after the fact.
+| Model | Brier [95% CI] | CORP MCB [95% CI] | Slope | AUC |
+|---|---|---|---|---|
+| M1 Voronoi | 0.231 [0.216, 0.244] | 0.142 [0.133, 0.152] | 0.114 | 0.675 |
+| M2 Physics | 0.167 [0.156, 0.177] | **0.081 [0.075, 0.087]** | **0.306** | 0.762 |
+| M2a Reachability sigmoid | 0.155 [0.146, 0.163] | 0.069 [0.064, 0.073] | 0.636 | 0.761 |
+| M3 Logistic | 0.078 [0.072, 0.084] | 0.001 [0.001, 0.001] | 1.014 | 0.837 |
+| M4 GBM | 0.073 [0.068, 0.079] | 0.000 [0.000, 0.001] | 1.018 | 0.864 |
+| M0 Base rate | 0.094 [0.088, 0.101] | 0.000 | — | 0.500 |
+
+**H1a is rejected**: the physics model's miscalibration interval is far from
+zero. **H1b is rejected in the predicted direction**: the slope is 0.31, not 1,
+and the directional prediction of overconfidence was registered in advance.
+**H2a is rejected**: the paired difference against the logistic baseline is
++0.089 Brier [0.082, 0.096], decisively favouring the baseline.
+
+Two observations matter more than the ranking. First, the physics model's Brier
+score (0.167) is **worse than forecasting the base rate everywhere** (0.094),
+while its AUC (0.762) is far above chance — an evaluation resting on
+discrimination would report a working model. Second, the gap between M2 and the
+one-parameter reachability sigmoid (M2a) is small relative to the gap between
+either and the fitted baselines, which suggests the competing-risks dynamics are
+contributing little beyond a monotone squash of a time-to-point difference.
+
+The measured **design effect is 11.1**, so naive independent-observation
+intervals would have been about 3.3 times too narrow. That is a concrete answer
+to "how much would ignoring clustering have mattered?" on real football data.
+
+#### RQ3 — where it breaks down
+
+Every directional prediction registered under H3 is supported, and all 47
+pre-registered strata show FDR-adjusted evidence of miscalibration.
+
+| Stratum | MCB | Slope |
+|---|---|---|
+| Attacking third | 0.158 | 0.273 |
+| Middle third | 0.057 | 0.359 |
+| Defensive third | 0.031 | 0.324 |
+| Pass 0–10 m | 0.070 | 0.447 |
+| Pass 30–45 m | 0.126 | 0.190 |
+| Pass 45 m+ | 0.156 | 0.092 |
+| Attacking fifth, central | **0.292** | 0.185 |
+
+The spatial concentration is the practically important part. Miscalibration is
+five times worse in the attacking third than the defensive third, and worst of
+all in the central attacking fifth — the penalty area, which is precisely where
+space-creation and possession-value metrics are most used and most consequential.
+
+#### RQ4 — how much is the camera?
+
+Within this corpus, calibration improves monotonically with the fraction of the
+frame actually observed:
+
+| Frame completeness | MCB | Slope |
+|---|---|---|
+| < 60% | 0.095 | 0.221 |
+| 60–75% | 0.086 | 0.300 |
+| 75–90% | 0.076 | 0.385 |
+| 90%+ | 0.049 | 0.556 |
+
+Restricting to near-complete frames *with a visible destination* gives MCB 0.045
+and slope 0.571, against 0.081 and 0.306 overall. So roughly **45% of the
+measured miscalibration is attributable to incomplete observation and about 55%
+survives it**. Even when the camera sees nearly everything, the velocity-free
+model remains badly overconfident while its AUC rises to 0.86 — the same
+divergence, at better data quality.
+
+That decomposition is **suggestive, not causal**: high-completeness frames are
+not a random subsample of arrivals (the ball is more often in crowded central
+areas), so the comparison confounds observability with the kind of situation
+being observed. Establishing the split properly needs the degradation-simulation
+ablation on a fully-observed corpus.
+
+#### H4a, H5c — transportability, and whether one fix travels
+
+Holding out each competition in turn and fitting on the other two:
+
+| Model | MCB within competition | MCB across competitions | Penalty for crossing |
+|---|---|---|---|
+| M2 Physics | 0.085 | 0.083 | **−0.002** |
+| M3 Logistic | 0.0010 | 0.0011 | +0.0001 |
+| M4 GBM | 0.0006 | 0.0004 | −0.0002 |
+
+**H4a is not rejected, and the null is the interesting result.** Crossing a
+competition boundary costs essentially nothing — including the men's-to-women's
+boundary, despite base rates differing materially (0.909, 0.921, 0.859). The
+miscalibration is therefore **structural rather than local**: the model is
+equally wrong everywhere, which is a stronger claim than being wrong on this
+particular league.
+
+It follows that one fix travels. A recalibration map fitted on two competitions
+and applied to a third, unseen one removes **97–99%** of the physics model's
+measured miscalibration (isotonic 0.989, beta 0.986, Platt 0.974 on average,
+with a worst case of 0.964). **H5c is not rejected.** This is the pre-registered
+"deflating and useful" outcome, Pattern 7: the model's *ordering* of situations
+is sound and only its scale is wrong, so the defect is repairable downstream by
+a two- or three-parameter map that a practitioner can fit once and deploy.
+
+For M3 and M4 the same maps do nothing or slightly harm, which is correct
+behaviour rather than a failure: their residual miscalibration is already around
+0.001, and refitting a map on that is fitting noise.
+
+#### What this licenses, and what it does not
+
+Licensed, for freeze-frame data: pitch-control values from a velocity-free
+model should not be used as probabilities without recalibration; the error is
+systematic, spatially concentrated in the final third, worse for long passes and
+poorly-observed frames, and almost entirely removable by a single global map.
+
+Not licensed: any claim about the published full-tracking models. The
+zero-velocity constraint is severe and its cost is not separable here from the
+model's own defects. Establishing that requires the primary corpus, and the
+present result should be read as motivating that work rather than substituting
+for it.
 
 ---
 
@@ -2501,7 +2604,7 @@ velocity" ablation: the fallback *measures* what the ablation only simulates.
 The adapter is written and the whole protocol runs on it end to end, so the
 fallback is no longer a plan — it is an executable alternative that could be
 started tomorrow. Its two costs, both verified: the camera covers only part of
-the pitch (16.4% of destinations fall outside it), and the corpus contains no
+the pitch (21% of destinations fall outside it), and the corpus contains no
 exogenous arrivals, so Section 14's quasi-exogenous identification argument
 cannot be run on it and the selection analysis must rest on reweighting,
 stratification and sensitivity bounds alone.

@@ -198,10 +198,18 @@ def test_visibility_is_recorded_and_incomplete(loaded):
 
 
 @needs_data
-def test_frames_never_show_all_22_players(loaded):
-    """Freeze frames are camera-limited; completeness is a first-class covariate."""
+def test_frames_almost_never_show_all_22_players(loaded):
+    """Freeze frames are camera-limited; completeness is a first-class covariate.
+
+    This test previously asserted that *no* frame shows all 22 players, which was
+    measured on a single match and failed as soon as the corpus grew: at scale it
+    happens at roughly 1 arrival in 2,500. The assertion is now about the rate,
+    not about impossibility - a categorical claim from one match was exactly the
+    kind of over-reach this study exists to criticise.
+    """
     _frames, df = loaded
-    assert df["frame_completeness"].max() < 1.0
+    complete = float((df["frame_completeness"] >= 1.0).mean())
+    assert complete < 0.01, f"{complete:.4f} of frames fully observed: unexpectedly high"
     assert 0.6 < df["frame_completeness"].median() < 0.95
 
 

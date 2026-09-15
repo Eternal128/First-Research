@@ -31,10 +31,12 @@ The two findings that constrain the design
 1. **No velocity, at all.** A freeze frame is a single snapshot. Every model
    runs in its zero-velocity form, which is exactly the "remove velocity"
    ablation - so the fallback *measures* what that ablation simulates.
-2. **Freeze frames show only what the camera saw.** On the matches checked,
-   360 frames cover 86.6% of passes; the median frame shows **17 of 22
-   players** and **no frame shows all 22**. Worse, **16.4% of pass destinations
-   fall outside the ``visible_area`` polygon entirely.** For those arrivals,
+2. **Freeze frames show only what the camera saw.** Measured over 179 matches
+   (World Cup 2022, Euro 2024, Women's World Cup 2023): 360 frames cover
+   **83.9%** of passes; the median pass event shows **16 of 22 players**; all 22
+   are visible at roughly **1 arrival in 2,500**. Worse, **21% of pass
+   destinations fall outside the ``visible_area`` polygon entirely.** For those
+   arrivals,
    "no defender near the destination" means "no defender *visible*", and a
    control model will confidently report that the attacking team owns the space
    while being uninformed rather than right.

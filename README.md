@@ -28,7 +28,7 @@ evaluation problem.
 | Tests | 120 passing, including 8 instrument-validation checks |
 | Real data | Metrica, SkillCorner and StatsBomb obtained and **verified against the files**; PFF unobtained. See `docs/data_sources.md` |
 | Loaders | **All three implemented and tested** (Metrica optical, SkillCorner broadcast, StatsBomb freeze-frame); PFF unobtained |
-| Results | Not committed. The largest real corpus here is 8 matches — a pipeline demonstration, not findings |
+| Results | Not committed (regenerable). The freeze-frame corpus is **179 matches / 137k arrivals** and is powered; the tracking corpora are 2 and 4 matches and are not |
 
 ---
 
@@ -67,10 +67,28 @@ python scripts/03_main_analysis.py --source statsbomb_open
 python scripts/10_cross_corpus.py
 ```
 
-Both corpora are small, and the analysis script will tell you so at length: the
-cluster bootstrap resamples *matches*, so two matches means two clusters. Treat
-anything either produces as a demonstration that the pipeline works, not as a
-finding about football.
+First parse of a large corpus takes minutes; results are cached under
+`results/cache/` and keyed by a fingerprint of the raw data plus the label and
+preprocessing settings, so adding matches invalidates the cache rather than
+silently serving a smaller one.
+
+The two tracking corpora are small, and the analysis script will say so at
+length: the cluster bootstrap resamples *matches*, so two matches means two
+clusters. The freeze-frame corpus can be scaled to 179 matches across three
+competitions, which is enough for inference — but it is the **fallback** design
+(no velocity, camera-limited), so what it measures is the velocity-free variant
+of each model, not the published full-tracking ones. See proposal Section 20.1,
+which states that scope limit before any number.
+
+```bash
+# scale the fallback corpus to three competitions (~1.8 GB)
+for spec in "43 106" "55 282" "72 107"; do set -- $spec
+  python scripts/fetch_data.py --source statsbomb_open --accept-terms \
+      --competition $1 --season $2 --with-360
+done
+python scripts/03_main_analysis.py  --source statsbomb_open --n-boot 1000
+python scripts/11_transportability.py --source statsbomb_open
+```
 
 ---
 

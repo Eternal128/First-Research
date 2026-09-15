@@ -308,3 +308,64 @@ def test_negative_control_splits_chosen_from_unchosen(sim_corpus):
     work = df.assign(p=np.clip(rng.beta(5, 2, len(df)), 0.01, 0.99))
     out = negative_control_comparison(work, prob_col="p", outcome_col="y_control", n_boot=40)
     assert set(out["subsample"]) == {"chosen", "unchosen"}
+
+
+# --- frame serialisation (the corpus cache) ---------------------------------
+def test_frame_roundtrip_preserves_everything_a_model_reads(sim_corpus, tmp_path):
+    """A cache that changes the data is worse than no cache at all."""
+    import numpy as np
+
+    from pcc.data.tracking import load_frames, save_frames
+    from pcc.models import PhysicalControl, VoronoiControl
+
+    frames, _df = sim_corpus
+    path = tmp_path / "frames.npz"
+    save_frames(frames[:400], path)
+    restored = load_frames(path)
+
+    assert len(restored) == 400
+    for a, b in zip(frames[:400], restored):
+        assert np.allclose(a.att_xy, b.att_xy, atol=1e-3)
+        assert np.allclose(a.att_v, b.att_v, atol=1e-3)
+        assert np.allclose(a.def_xy, b.def_xy, atol=1e-3)
+        assert np.allclose(a.target, b.target, atol=1e-3)
+        assert abs(a.flight_time - b.flight_time) < 1e-3
+        assert (a.att_is_gk == b.att_is_gk).all()
+        assert (a.def_observed == b.def_observed).all()
+        assert np.allclose(a.meta["origin"], b.meta["origin"], atol=1e-3)
+
+    # The property that actually matters: models must not notice the roundtrip.
+    for model in (VoronoiControl(), PhysicalControl()):
+        assert np.allclose(model.predict(frames[:200]), model.predict(restored[:200]), atol=1e-4)
+
+
+def test_frame_roundtrip_handles_an_empty_corpus(tmp_path):
+    from pcc.data.tracking import load_frames, save_frames
+
+    path = tmp_path / "empty.npz"
+    save_frames([], path)
+    assert load_frames(path) == []
+
+
+def test_frame_roundtrip_handles_ragged_player_counts(tmp_path):
+    """Substitutions, occlusions and freeze frames all give uneven team sizes."""
+    import numpy as np
+
+    from pcc.data.schema import ArrivalFrame
+    from pcc.data.tracking import load_frames, save_frames
+
+    rng = np.random.default_rng(0)
+    frames = [
+        ArrivalFrame(
+            att_xy=rng.uniform(-40, 40, (n_a, 2)), att_v=rng.normal(0, 2, (n_a, 2)),
+            def_xy=rng.uniform(-40, 40, (n_b, 2)), def_v=rng.normal(0, 2, (n_b, 2)),
+            target=np.array([1.0, 2.0]), flight_time=1.0,
+            meta={"origin": np.array([-3.0, 4.0])},
+        )
+        for n_a, n_b in [(11, 11), (8, 10), (3, 4), (11, 7)]
+    ]
+    path = tmp_path / "ragged.npz"
+    save_frames(frames, path)
+    restored = load_frames(path)
+    assert [f.n_att for f in restored] == [11, 8, 3, 11]
+    assert [f.n_def for f in restored] == [11, 10, 4, 7]

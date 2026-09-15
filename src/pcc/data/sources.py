@@ -320,12 +320,15 @@ SOURCES: dict[str, DataSource] = {
             "(median 13.1). Earlier planning assumed a ball-speed model would be "
             "needed; it is not. Caveat: `duration` runs to the related event, which "
             "is the flight time for a completed pass and an approximation otherwise.",
-            "VERIFIED: 360 frames cover 86.6% of passes; the median frame shows 17 "
-            "of 22 players and NO frame shows all 22. Frame completeness is a "
-            "first-class covariate, not a nuisance.",
-            "VERIFIED: 16.4% of pass destinations fall OUTSIDE the visible_area "
-            "polygon. For those arrivals 'no defender near the destination' means "
-            "'no defender visible'. The adapter flags them destination_not_visible.",
+            "VERIFIED over 179 matches: 360 frames cover 83.9% of passes; the median "
+            "pass event shows 16 of 22 players, and all 22 are visible at about 1 "
+            "arrival in 2,500. Frame completeness is a first-class covariate, not a "
+            "nuisance. (An earlier single-match check gave 86.6%, a median of 17, and "
+            "'never all 22'; all three were small-sample artefacts.)",
+            "VERIFIED over 179 matches: 21% of pass destinations fall OUTSIDE the "
+            "visible_area polygon. For those arrivals 'no defender near the "
+            "destination' means 'no defender visible'. The adapter flags them "
+            "destination_not_visible.",
             "VERIFIED: only Pass events carry both a start and an end location, so "
             "the corpus contains NO exogenous arrivals at all. The quasi-exogenous "
             "identification argument of proposal Section 14 is unavailable here.",
@@ -352,14 +355,18 @@ SOURCES: dict[str, DataSource] = {
             "player_identity_in_freeze_frame": False,
             "pass_duration_present": True,
             "implied_ball_speed_ms": {"p5": 6.9, "p50": 13.1, "p95": 22.1},
-            "pass_360_coverage": 0.866,
-            "median_players_visible": 17,
-            "frames_with_all_22": 0,
-            "destination_inside_visible_area": 0.836,
+            "checked_at_scale_on": "2026-09-15, 179 matches, 3 competitions",
+            "pass_360_coverage": 0.839,
+            "median_players_visible_at_pass": 16,
+            "frac_arrivals_with_all_22_visible": 0.0004,
+            "destination_inside_visible_area": 0.789,
             "exogenous_arrival_types_available": [],
-            "arrivals_8_matches": 7284,
-            "base_rate_control_h1s": 0.90,
+            "arrivals_179_matches": 151418,
+            "arrivals_after_filters": 137545,
+            "base_rate_control_h1s": 0.896,
             "label_agreement_with_completed_passes": 0.966,
+            "competitions": ["FIFA World Cup 2022", "UEFA Euro 2024", "Women's World Cup 2023"],
+            "design_effect": 11.1,
         },
     ),
     "simulated": DataSource(

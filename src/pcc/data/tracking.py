@@ -486,3 +486,78 @@ def _check_direction_of_play(table: pd.DataFrame, *, min_rows: int = 200) -> Non
             "rotation has been applied twice.",
             stacklevel=3,
         )
+
+
+# ---------------------------------------------------------------------------
+# On-disk caching
+# ---------------------------------------------------------------------------
+def save_frames(frames: list[ArrivalFrame], path) -> None:
+    """Serialise arrival frames to a compressed ``.npz``.
+
+    Player counts vary per arrival (substitutions, occlusions, freeze frames),
+    so the frames are stored as one concatenated block plus per-arrival offsets
+    rather than a ragged object array. That keeps the file loadable by any NumPy
+    without pickle, which matters because a cache that only this version of this
+    code can read is not a cache, it is a liability.
+    """
+    import numpy as np
+
+    from pathlib import Path
+
+    n = len(frames)
+    if n == 0:
+        np.savez_compressed(Path(path), n_frames=np.array([0]))
+        return
+
+    counts_a = np.array([f.n_att for f in frames], dtype=np.int32)
+    counts_b = np.array([f.n_def for f in frames], dtype=np.int32)
+    payload = {
+        "n_frames": np.array([n]),
+        "counts_a": counts_a,
+        "counts_b": counts_b,
+        "att_xy": np.concatenate([f.att_xy for f in frames]).astype(np.float32),
+        "att_v": np.concatenate([f.att_v for f in frames]).astype(np.float32),
+        "def_xy": np.concatenate([f.def_xy for f in frames]).astype(np.float32),
+        "def_v": np.concatenate([f.def_v for f in frames]).astype(np.float32),
+        "att_gk": np.concatenate([f.att_is_gk for f in frames]),
+        "def_gk": np.concatenate([f.def_is_gk for f in frames]),
+        "att_obs": np.concatenate([f.att_observed for f in frames]),
+        "def_obs": np.concatenate([f.def_observed for f in frames]),
+        "target": np.stack([f.target for f in frames]).astype(np.float32),
+        "origin": np.stack([
+            np.asarray(f.meta.get("origin", f.target), dtype=float).reshape(2) for f in frames
+        ]).astype(np.float32),
+        "flight": np.array([f.flight_time for f in frames], dtype=np.float32),
+    }
+    np.savez_compressed(Path(path), **payload)
+
+
+def load_frames(path) -> list[ArrivalFrame]:
+    """Read frames written by :func:`save_frames`."""
+    import numpy as np
+
+    with np.load(path) as z:
+        n = int(z["n_frames"][0])
+        if n == 0:
+            return []
+        ca, cb = z["counts_a"], z["counts_b"]
+        oa = np.concatenate([[0], np.cumsum(ca)])
+        ob = np.concatenate([[0], np.cumsum(cb)])
+        att_xy, att_v, def_xy, def_v = z["att_xy"], z["att_v"], z["def_xy"], z["def_v"]
+        att_gk, def_gk, att_obs, def_obs = z["att_gk"], z["def_gk"], z["att_obs"], z["def_obs"]
+        target, origin, flight = z["target"], z["origin"], z["flight"]
+
+        out = []
+        for i in range(n):
+            a0, a1, b0, b1 = oa[i], oa[i + 1], ob[i], ob[i + 1]
+            out.append(
+                ArrivalFrame(
+                    att_xy=att_xy[a0:a1].astype(float), att_v=att_v[a0:a1].astype(float),
+                    def_xy=def_xy[b0:b1].astype(float), def_v=def_v[b0:b1].astype(float),
+                    target=target[i].astype(float), flight_time=float(flight[i]),
+                    att_is_gk=att_gk[a0:a1], def_is_gk=def_gk[b0:b1],
+                    att_observed=att_obs[a0:a1], def_observed=def_obs[b0:b1],
+                    meta={"origin": origin[i].astype(float)},
+                )
+            )
+        return out

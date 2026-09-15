@@ -220,12 +220,12 @@ def load_statsbomb(
     * **No velocity.** A freeze frame is one snapshot, so every model runs in
       its zero-velocity form. The fallback therefore *measures* what the
       "remove velocity" ablation simulates.
-    * **Only what the camera saw.** The median frame shows 17 of 22 players and
-      roughly one pass destination in six falls outside the ``visible_area``
-      polygon. Those arrivals are flagged ``destination_not_visible`` and
-      carry ``dest_visible = False``; they must be excluded or analysed
-      separately, because for them "no defender near the destination" means "no
-      defender visible".
+    * **Only what the camera saw.** Over 179 matches the median pass event shows
+      16 of 22 players, and roughly **one pass destination in five** falls
+      outside the ``visible_area`` polygon. Those arrivals are flagged
+      ``destination_not_visible`` and carry ``dest_visible = False``; they must
+      be excluded or analysed separately, because for them "no defender near the
+      destination" means "no defender visible".
 
     Passes without a 360 frame are skipped by default (``require_360``): with no
     freeze frame there is no state, so no control model can be evaluated.
