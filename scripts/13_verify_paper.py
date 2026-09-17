@@ -165,6 +165,38 @@ def build_claims() -> list[tuple]:
     return claims
 
 
+# ---------------------------------------------------------------------------
+# LaTeX consistency
+# ---------------------------------------------------------------------------
+
+# Headline figures that must appear verbatim in paper/paper.tex. Each is already
+# checked against results/ by the claim ledger above; this second pass only
+# catches the LaTeX manuscript drifting away from the verified markdown.
+LATEX_HEADLINES = [
+    "137,545", "151,418", "40,867", "179 matches", "53 held-out matches",
+    "0.762", "0.167", "0.094", "0.306", "0.081",
+    "0.089", "0.082, 0.096",
+    "0.158", "0.031", "0.292",
+    "0.145", "0.064",
+    "0.972", "52.6", "7,753", "1,525",
+    "97--99", "98.9", "97.4",
+    "0.559", "0.773", "28",
+    "36.0", "25.2", "30.6", "24.0",
+    "11.1", "0.013",
+    "83.9", "96.6", "21",
+]
+
+
+def check_latex(tex_path):
+    """Return (checked, missing) for the headline strings in paper/paper.tex."""
+    if not tex_path.exists():
+        return 0, None
+    # ``137{,}545`` in LaTeX is ``137,545`` on the page.
+    text = tex_path.read_text(encoding="utf-8").replace("{,}", ",")
+    missing = [h for h in LATEX_HEADLINES if h not in text]
+    return len(LATEX_HEADLINES), missing
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--strict", action="store_true", help="Exit non-zero on any mismatch.")
@@ -205,6 +237,19 @@ def main() -> int:
         print("\n  Fix the paper, or re-run the analysis that produced the table.")
         return 1 if args.strict else 0
     print(f"  All {len(rows)} claims in docs/paper.md match the result files.")
+
+    tex = REPO_ROOT / "paper" / "paper.tex"
+    n_tex, missing = check_latex(tex)
+    if missing is None:
+        print("  (paper/paper.tex not present; LaTeX cross-check skipped.)")
+    elif missing:
+        print(f"\n  {len(missing)} of {n_tex} headline figures are missing from "
+              f"paper/paper.tex:")
+        for m in missing:
+            print(f"    - {m}")
+        return 1 if args.strict else 0
+    else:
+        print(f"  All {n_tex} headline figures also appear in paper/paper.tex.")
     return 0
 
 

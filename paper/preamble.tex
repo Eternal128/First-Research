@@ -1,0 +1,50 @@
+% ---------------------------------------------------------------------------
+% Shared preamble for the pitch-control calibration paper.
+% ---------------------------------------------------------------------------
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage[a4paper,margin=2.6cm]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{array}
+\usepackage{tabularx}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage[labelfont=bf,font=small,labelsep=period]{caption}
+\usepackage{tcolorbox}
+\usepackage[round,authoryear]{natbib}
+\usepackage[hidelinks,breaklinks]{hyperref}
+
+\definecolor{ink}{HTML}{111111}
+\definecolor{ink2}{HTML}{52514E}
+\definecolor{rule1}{HTML}{2A78D6}
+\definecolor{boxbg}{HTML}{F4F6F9}
+\definecolor{boxline}{HTML}{C9D6E8}
+
+\tcbset{
+  plainstyle/.style={
+    colback=boxbg, colframe=boxline, boxrule=0.5pt, arc=1.5pt,
+    left=8pt, right=8pt, top=6pt, bottom=6pt,
+    fonttitle=\bfseries\small, coltitle=ink
+  }
+}
+\newtcolorbox{plainbox}[1][]{plainstyle, title={#1}}
+
+% A short marginal-style aside that restates a technical point in ordinary words.
+\newcommand{\plainly}[1]{%
+  \par\smallskip\noindent\textcolor{rule1}{\rule{2.2pt}{9pt}}\hspace{5pt}%
+  {\small\textit{In plain terms.} #1}\par\smallskip}
+
+\setlength{\parskip}{0.35em}
+\setlength{\tabcolsep}{5pt}
+\renewcommand{\arraystretch}{1.12}
+
+\captionsetup[table]{skip=4pt}
+\captionsetup[figure]{skip=6pt}
+
+\newcolumntype{R}{>{\raggedleft\arraybackslash}X}
+\newcommand{\ci}[2]{\,\scriptsize[#1,\,#2]}
