@@ -1,7 +1,9 @@
 # Are football pitch-control models calibrated probabilities?
 
-Research code and protocol for an empirical study of whether pitch-control
-values behave like the probabilities they are read as.
+**No — not the velocity-free ones, on 137,545 realised ball arrivals.**
+
+Research code, protocol and results for an empirical study of whether
+pitch-control values behave like the probabilities they are read as.
 
 **The question.** Pitch-control models emit a field `C_A(x, y, t) ∈ [0, 1]`,
 routinely interpreted as the probability that team A would control the ball if it
@@ -15,7 +17,20 @@ somewhere, and the realised outcome there is a draw from the distribution the
 model claims to describe. That makes it an ordinary probabilistic forecast
 evaluation problem.
 
-📄 **[Read the full proposal → `docs/proposal.md`](docs/proposal.md)**
+📄 **[Read the paper → `docs/paper.md`](docs/paper.md)** · [the protocol → `docs/proposal.md`](docs/proposal.md)
+
+**Headline.** On 179 matches across three competitions, the physics-based model
+discriminates well (AUC 0.76) while scoring *worse than forecasting the base
+rate* (Brier 0.167 vs 0.094); its calibration slope is 0.31. The error is five
+times worse in the attacking third, seven times worse on the destinations
+players choose least often, transports unchanged across competitions and across
+the men's/women's boundary, and survives every pre-registered horizon and
+outcome definition. It is also almost entirely removable: a recalibration map
+fitted on two competitions strips 97–99% of it from a third.
+
+**Scope.** These are the *velocity-free, camera-limited* variants, evaluated on
+freeze-frame data. This is **not** a test of published full-tracking models —
+paper §1 and §8 say so at length.
 
 ---
 
@@ -23,12 +38,14 @@ evaluation problem.
 
 | | |
 |---|---|
-| Protocol | Complete — 25 sections, pre-registered hypotheses and analysis plan |
+| Protocol | Complete and **executed** on the fallback design; Section 20.1 records how each hypothesis resolved |
+| Paper | Complete — `docs/paper.md`, 126 numeric claims cross-checked against `results/` |
 | Implementation | Complete and tested — models, metrics, splits, selection layer, downstream propagation, ablations |
 | Tests | 120 passing, including 8 instrument-validation checks |
 | Real data | Metrica, SkillCorner and StatsBomb obtained and **verified against the files**; PFF unobtained. See `docs/data_sources.md` |
 | Loaders | **All three implemented and tested** (Metrica optical, SkillCorner broadcast, StatsBomb freeze-frame); PFF unobtained |
-| Results | Not committed (regenerable). The freeze-frame corpus is **179 matches / 137k arrivals** and is powered; the tracking corpora are 2 and 4 matches and are not |
+| Results | Not committed (regenerable in ~1 h). Freeze-frame corpus **179 matches / 137k arrivals**, powered; the tracking corpora are 2 and 4 matches and are not |
+| Open | The primary full-tracking design. Needs a corpus this study did not have |
 
 ---
 
@@ -42,6 +59,12 @@ python scripts/00_environment_report.py      # what can run here
 python scripts/09_validate_instrument.py     # is the calibration estimator correct?
 bash    scripts/run_all.sh                   # the whole pipeline, on simulated data
 pytest -q                                    # the test suite
+```
+
+To reproduce the paper end to end, see its **Reproduction** section, then:
+
+```bash
+python scripts/13_verify_paper.py --strict   # re-check all 126 claims
 ```
 
 No network access and no provider data are needed for any of that — it runs on
@@ -125,7 +148,11 @@ never by row — arrivals nest within possessions within matches. Recalibration
 maps are fitted on a disjoint validation fold; the protocol raises if a split has
 no validation fold. A leakage audit is written with every experiment.
 
-**3. Selection bias is a design problem, not a caveat.** Passers choose their
+**3. Every number in the paper is machine-checked.** `scripts/13_verify_paper.py`
+holds all 126 numeric claims in an explicit ledger and re-derives each from the
+result tables, so a stale figure left by a re-run cannot survive quietly.
+
+**4. Selection bias is a design problem, not a caveat.** Passers choose their
 destinations, partly on information the data does not contain. Reweighting fixes
 the covariate-shift part and *cannot* fix the rest. The primary response is a
 quasi-exogenous subsample — deflections, clearances and second balls, which

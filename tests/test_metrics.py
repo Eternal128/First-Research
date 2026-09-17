@@ -188,3 +188,25 @@ def test_rejects_non_binary_outcomes():
 def test_rejects_shape_mismatch():
     with pytest.raises(ValueError):
         brier_score(np.array([0, 1]), np.array([0.1, 0.2, 0.3]))
+
+
+def test_package_reexports_every_public_metric():
+    """A public metric that is not re-exported is a trap for the analysis scripts.
+
+    The scripts import from ``pcc.calibration``, not from its submodules, so a
+    metric that exists but is not re-exported fails only at the moment a script
+    tries to use it - which in practice meant an hour-long background sweep
+    dying on an ImportError after the corpus had already been parsed.
+    """
+    import pcc.calibration as package
+    import pcc.calibration.metrics as metrics
+
+    public = [
+        name for name in dir(metrics)
+        if not name.startswith("_")
+        and callable(getattr(metrics, name))
+        and getattr(getattr(metrics, name), "__module__", "") == "pcc.calibration.metrics"
+    ]
+    missing = [name for name in public if not hasattr(package, name)]
+    assert not missing, f"not re-exported from pcc.calibration: {missing}"
+    assert set(public) <= set(package.__all__) | {"full_report"}, "some metrics are missing from __all__"

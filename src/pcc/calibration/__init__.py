@@ -10,17 +10,20 @@ from pcc.calibration.bootstrap import (
 from pcc.calibration.metrics import (
     CORPDecomposition,
     adaptive_calibration_error,
+    average_precision,
     brier_score,
     calibration_slope_intercept,
     corp_decomposition,
     corp_decomposition_cv,
     expected_calibration_error,
     full_report,
+    isotonic_recalibrate,
     log_loss,
     maximum_calibration_error,
     murphy_decomposition,
     roc_auc,
     sharpness,
+    spherical_score,
 )
 from pcc.calibration.recalibration import (
     RECALIBRATORS,
@@ -33,7 +36,8 @@ from pcc.calibration.recalibration import (
 from pcc.calibration.reliability import binned_reliability, corp_reliability, reliability_by_group
 
 __all__ = [
-    "brier_score", "log_loss", "roc_auc", "sharpness",
+    "brier_score", "log_loss", "roc_auc", "sharpness", "spherical_score",
+    "average_precision", "isotonic_recalibrate",
     "corp_decomposition", "corp_decomposition_cv", "CORPDecomposition",
     "murphy_decomposition", "expected_calibration_error",
     "maximum_calibration_error", "adaptive_calibration_error",

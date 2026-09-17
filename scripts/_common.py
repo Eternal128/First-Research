@@ -56,7 +56,8 @@ def outdir(name: str, *, config: dict | None = None) -> Path:
 
 
 
-def _corpus_cache_key(source: str, root: str, label_cfg, config: dict) -> str:
+def _corpus_cache_key(source: str, root: str, label_cfg, config: dict,
+                      loader_kwargs: dict | None = None) -> str:
     """Hash of everything that changes what the parsed corpus contains.
 
     Deliberately includes the raw-data fingerprint (file count, total size and
@@ -81,12 +82,14 @@ def _corpus_cache_key(source: str, root: str, label_cfg, config: dict) -> str:
         "label": {"definition": label_cfg.definition, "horizon": label_cfg.horizon,
                   "censor": label_cfg.censor_on_stoppage},
         "preprocess": config.get("preprocess", {}),
-        "schema_version": 2,
+        "loader_kwargs": loader_kwargs or {},
+        "schema_version": 3,
     }
     return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()[:16]
 
 
-def _load_with_cache(source: str, root: str, label_cfg, config: dict, *, use_cache: bool = True):
+def _load_with_cache(source: str, root: str, label_cfg, config: dict, *, use_cache: bool = True,
+                     loader_kwargs: dict | None = None):
     """Parse a corpus, caching the result under the scratch cache directory."""
     import pandas as pd
 
@@ -94,7 +97,7 @@ def _load_with_cache(source: str, root: str, label_cfg, config: dict, *, use_cac
     from pcc.data.tracking import load_frames, save_frames
 
     cache_dir = REPO_ROOT / "results" / "cache"
-    key = _corpus_cache_key(source, root, label_cfg, config)
+    key = _corpus_cache_key(source, root, label_cfg, config, loader_kwargs)
     table_path = cache_dir / f"{source}_{key}.csv"
     frames_path = cache_dir / f"{source}_{key}.npz"
 
@@ -109,7 +112,7 @@ def _load_with_cache(source: str, root: str, label_cfg, config: dict, *, use_cac
         except Exception as exc:
             print(f"  (cache unreadable, re-parsing: {type(exc).__name__})")
 
-    frames, arrivals = load_source(source, root=root, label_config=label_cfg)
+    frames, arrivals = load_source(source, root=root, label_config=label_cfg, **(loader_kwargs or {}))
     if use_cache:
         try:
             cache_dir.mkdir(parents=True, exist_ok=True)
@@ -120,7 +123,8 @@ def _load_with_cache(source: str, root: str, label_cfg, config: dict, *, use_cac
     return frames, arrivals
 
 
-def load_corpus(source: str, config: dict, *, root: str | None = None, use_cache: bool = True):
+def load_corpus(source: str, config: dict, *, root: str | None = None, use_cache: bool = True,
+                label_overrides: dict | None = None, loader_kwargs: dict | None = None):
     """Load a corpus and apply the study's inclusion criteria and subgroups.
 
     One code path for every source, so an analysis script never needs to know
@@ -135,10 +139,11 @@ def load_corpus(source: str, config: dict, *, root: str | None = None, use_cache
     from pcc.data.preprocess import PreprocessConfig, Provenance
     from pcc.evaluation import add_subgroups
 
+    labels = {**config.get("labels", {}), **(label_overrides or {})}
     label_cfg = LabelConfig(
-        definition=config.get("labels", {}).get("definition", "controlled_at_horizon"),
-        horizon=float(config.get("labels", {}).get("horizon", 1.0)),
-        censor_on_stoppage=bool(config.get("labels", {}).get("censor_on_stoppage", True)),
+        definition=labels.get("definition", "controlled_at_horizon"),
+        horizon=float(labels.get("horizon", 1.0)),
+        censor_on_stoppage=bool(labels.get("censor_on_stoppage", True)),
     )
 
     if source == "simulated":
@@ -153,7 +158,8 @@ def load_corpus(source: str, config: dict, *, root: str | None = None, use_cache
         if root is None:
             root = str(DATA_RAW / source)
         frames, arrivals = _load_with_cache(
-            source, root, label_cfg, config, use_cache=use_cache
+            source, root, label_cfg, config, use_cache=use_cache,
+            loader_kwargs=loader_kwargs or {},
         )
 
     prov = Provenance()

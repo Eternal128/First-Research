@@ -45,6 +45,9 @@ def main() -> int:
     ap.add_argument("--root", default=None, help="Path to raw data for provider sources.")
     ap.add_argument("--config", default="default.yaml")
     ap.add_argument("--model", default="M2_physical")
+    ap.add_argument("--max-matches", type=int, default=None,
+                    help="Subset the corpus. Candidate generation is O(arrivals x candidates), "
+                         "so a full corpus can be slow; matches are the resampling unit either way.")
     args = ap.parse_args()
 
     cfg = load_config(args.config)
@@ -54,7 +57,10 @@ def main() -> int:
     print("  It does NOT correct selection on what the passer knew and we did not,")
     print("  and it does NOT identify control where the ball never arrived.\n")
 
-    frames, df, _prov = load_corpus(args.source, cfg, root=args.root)
+    frames, df, _prov = load_corpus(
+        args.source, cfg, root=args.root,
+        loader_kwargs={"max_matches": args.max_matches} if args.max_matches else None,
+    )
     y = df["y_control"].to_numpy(dtype=int)
     print(f"  {len(df)} arrivals, {df['match_id'].nunique()} matches, base rate {y.mean():.3f}")
 

@@ -4,7 +4,14 @@
 
 ---
 
-> **Status of this document.** This is a *protocol*, not a report of findings. It
+> **Status of this document.** This is the *protocol*. It was written before any
+> analysis and is preserved unchanged in substance so that the registered design
+> can be checked against what was run. **Results are in
+> [`docs/paper.md`](paper.md)**; Section 20.1 records how each hypothesis
+> resolved. The protocol has been executed on the freeze-frame fallback corpus;
+> the primary full-tracking design remains unexecuted.
+>
+> Originally, and still true of everything outside Section 20.1: It
 > states in advance what will be measured, on what data, by what estimator, and
 > what each possible outcome would license us to conclude. No empirical result
 > about football appears anywhere in it, because none has been obtained. Where a
@@ -2151,141 +2158,62 @@ Patterns 2, 7 and 14 are, in our judgement, the most likely combination. Stating
 that guess in advance is a discipline, not a prediction: if the data say
 otherwise, the record shows we were wrong rather than that we always expected it.
 
-### 20.1 First powered results — on the fallback design only
+### 20.1 Status: the protocol has been executed on the fallback design
 
-A corpus large enough to support inference now exists for the **freeze-frame
-fallback**: 179 StatsBomb 360 matches across three competitions (FIFA World Cup
-2022, UEFA Euro 2024, Women's World Cup 2023), giving **137,545 arrivals** after
-the inclusion criteria, with 53 matches in the test fold. Intervals below are
-cluster bootstraps over 1,000 replicates resampling whole matches.
+**Results live in [`docs/paper.md`](paper.md), not here.** This document remains
+the protocol; keeping the two separate is what makes it checkable that the
+analysis run was the analysis registered. Every figure in the paper is
+cross-checked against `results/` by `scripts/13_verify_paper.py`, which holds
+126 claims in an explicit ledger and re-derives each from the result tables.
 
-#### The scope limit, stated first because it governs everything after it
+The corpus was the **freeze-frame fallback**: 179 StatsBomb 360 matches across
+three competitions, 137,545 arrivals, 53 test-fold matches. The primary
+full-tracking design remains unexecuted for want of a corpus.
 
-> These results describe the **velocity-free, camera-limited** variant of each
-> model, not the published full-tracking versions. A freeze frame is one
-> snapshot, so no model here has access to velocity; and the camera sees a
-> median of 16 of 22 players, with 21% of destinations outside the covered
-> region. **This does not test whether published pitch-control models are
-> calibrated.** It tests what happens to them under the data conditions most
-> clubs and researchers outside the elite tier actually face — which is a
-> different question, and one worth answering, but it must not be reported as
-> the first.
+#### Hypotheses, as registered and as resolved
 
-#### RQ1, RQ2 — calibration and the baseline comparison
-
-| Model | Brier [95% CI] | CORP MCB [95% CI] | Slope | AUC |
-|---|---|---|---|---|
-| M1 Voronoi | 0.231 [0.216, 0.244] | 0.142 [0.133, 0.152] | 0.114 | 0.675 |
-| M2 Physics | 0.167 [0.156, 0.177] | **0.081 [0.075, 0.087]** | **0.306** | 0.762 |
-| M2a Reachability sigmoid | 0.155 [0.146, 0.163] | 0.069 [0.064, 0.073] | 0.636 | 0.761 |
-| M3 Logistic | 0.078 [0.072, 0.084] | 0.001 [0.001, 0.001] | 1.014 | 0.837 |
-| M4 GBM | 0.073 [0.068, 0.079] | 0.000 [0.000, 0.001] | 1.018 | 0.864 |
-| M0 Base rate | 0.094 [0.088, 0.101] | 0.000 | — | 0.500 |
-
-**H1a is rejected**: the physics model's miscalibration interval is far from
-zero. **H1b is rejected in the predicted direction**: the slope is 0.31, not 1,
-and the directional prediction of overconfidence was registered in advance.
-**H2a is rejected**: the paired difference against the logistic baseline is
-+0.089 Brier [0.082, 0.096], decisively favouring the baseline.
-
-Two observations matter more than the ranking. First, the physics model's Brier
-score (0.167) is **worse than forecasting the base rate everywhere** (0.094),
-while its AUC (0.762) is far above chance — an evaluation resting on
-discrimination would report a working model. Second, the gap between M2 and the
-one-parameter reachability sigmoid (M2a) is small relative to the gap between
-either and the fitted baselines, which suggests the competing-risks dynamics are
-contributing little beyond a monotone squash of a time-to-point difference.
-
-The measured **design effect is 11.1**, so naive independent-observation
-intervals would have been about 3.3 times too narrow. That is a concrete answer
-to "how much would ignoring clustering have mattered?" on real football data.
-
-#### RQ3 — where it breaks down
-
-Every directional prediction registered under H3 is supported, and all 47
-pre-registered strata show FDR-adjusted evidence of miscalibration.
-
-| Stratum | MCB | Slope |
+| Hypothesis | Registered prediction | Outcome |
 |---|---|---|
-| Attacking third | 0.158 | 0.273 |
-| Middle third | 0.057 | 0.359 |
-| Defensive third | 0.031 | 0.324 |
-| Pass 0–10 m | 0.070 | 0.447 |
-| Pass 30–45 m | 0.126 | 0.190 |
-| Pass 45 m+ | 0.156 | 0.092 |
-| Attacking fifth, central | **0.292** | 0.185 |
+| **H1a** MCB = 0 | rejected | **Rejected.** MCB 0.081 [0.075, 0.087] |
+| **H1b** slope = 1 | rejected, `b < 1` | **Rejected in the predicted direction.** Slope 0.306 |
+| **H2a** no difference vs logistic | rejected | **Rejected.** ΔBrier +0.089 [0.082, 0.096] against the physics model |
+| **H2b** equal MCB | rejected | **Rejected.** 0.081 vs 0.001 |
+| **H2c** equal DSC | — | **Also rejected**, and not as predicted: the physics model carries *less* information (DSC 0.008 vs 0.017), so the gap is not purely scale |
+| **H3** MCB constant across strata | rejected; worse in the attacking third, at long flights, under pressure | **Rejected; all three directional predictions supported.** 47 of 47 strata show FDR-adjusted evidence |
+| **H4a** no cost to crossing competitions | — | **Not rejected, and the null is the finding.** Penalty −0.002, including men's to women's |
+| **H4b** broadcast worse than optical | — | **Not testable at power.** Only 4 broadcast matches; replaced by the within-corpus observability contrast of paper §6.4 |
+| **H5a** Platt does not help | rejected | **Rejected.** MCB 0.081 → 0.001 |
+| **H5b** isotonic adds nothing over Platt | — | **Not rejected at scale.** All three maps reach ≈0; the isotonic advantage seen on 8 matches did not survive |
+| **H5c** the map transfers | — | **Not rejected.** 97–99% of miscalibration removed on an unseen competition |
+| **H6a** EPV unchanged | rejected | **Rejected.** Aggregate EPV understated by 28% |
+| **H6b** no decisions change | rejected | **Rejected.** 36% of recommendations change at threshold 0.70 |
+| **H6c** net benefit unchanged | — | **Rejected**, but see paper §7.3: recalibration restores the *meaning of the threshold*; it does not improve the ranking, which is unchanged by construction |
 
-The spatial concentration is the practically important part. Miscalibration is
-five times worse in the attacking third than the defensive third, and worst of
-all in the central attacking fifth — the penalty area, which is precisely where
-space-creation and possession-value metrics are most used and most consequential.
+#### Which pre-registered result pattern occurred
 
-#### RQ4 — how much is the camera?
+Section 20's table anticipated fifteen patterns and guessed at 2, 7 and 14.
+Patterns **2** (sharp but overconfident) and **7** (Platt scaling recovers
+nearly all of it) occurred. Pattern **14** — numbers move but decisions do not
+improve — did **not** occur as stated, and the reason is instructive: net
+benefit is evaluated at a *fixed nominal threshold*, which is not a
+ranking-invariant quantity, so a miscalibrated forecast is silently operating at
+the wrong point. Our advance guess was wrong about the mechanism, and paper §7.3
+states the corrected version rather than claiming the prediction held.
 
-Within this corpus, calibration improves monotonically with the fraction of the
-frame actually observed:
+Pattern **5** (calibration differs sharply by pitch zone) also occurred, and was
+not among our guesses. Pattern **10** (no model transports) is the notable
+*non*-occurrence: we expected competition-specific behaviour and found none.
 
-| Frame completeness | MCB | Slope |
-|---|---|---|
-| < 60% | 0.095 | 0.221 |
-| 60–75% | 0.086 | 0.300 |
-| 75–90% | 0.076 | 0.385 |
-| 90%+ | 0.049 | 0.556 |
+#### What the study still does not establish
 
-Restricting to near-complete frames *with a visible destination* gives MCB 0.045
-and slope 0.571, against 0.081 and 0.306 overall. So roughly **45% of the
-measured miscalibration is attributable to incomplete observation and about 55%
-survives it**. Even when the camera sees nearly everything, the velocity-free
-model remains badly overconfident while its AUC rises to 0.86 — the same
-divergence, at better data quality.
-
-That decomposition is **suggestive, not causal**: high-completeness frames are
-not a random subsample of arrivals (the ball is more often in crowded central
-areas), so the comparison confounds observability with the kind of situation
-being observed. Establishing the split properly needs the degradation-simulation
-ablation on a fully-observed corpus.
-
-#### H4a, H5c — transportability, and whether one fix travels
-
-Holding out each competition in turn and fitting on the other two:
-
-| Model | MCB within competition | MCB across competitions | Penalty for crossing |
-|---|---|---|---|
-| M2 Physics | 0.085 | 0.083 | **−0.002** |
-| M3 Logistic | 0.0010 | 0.0011 | +0.0001 |
-| M4 GBM | 0.0006 | 0.0004 | −0.0002 |
-
-**H4a is not rejected, and the null is the interesting result.** Crossing a
-competition boundary costs essentially nothing — including the men's-to-women's
-boundary, despite base rates differing materially (0.909, 0.921, 0.859). The
-miscalibration is therefore **structural rather than local**: the model is
-equally wrong everywhere, which is a stronger claim than being wrong on this
-particular league.
-
-It follows that one fix travels. A recalibration map fitted on two competitions
-and applied to a third, unseen one removes **97–99%** of the physics model's
-measured miscalibration (isotonic 0.989, beta 0.986, Platt 0.974 on average,
-with a worst case of 0.964). **H5c is not rejected.** This is the pre-registered
-"deflating and useful" outcome, Pattern 7: the model's *ordering* of situations
-is sound and only its scale is wrong, so the defect is repairable downstream by
-a two- or three-parameter map that a practitioner can fit once and deploy.
-
-For M3 and M4 the same maps do nothing or slightly harm, which is correct
-behaviour rather than a failure: their residual miscalibration is already around
-0.001, and refitting a map on that is fitting noise.
-
-#### What this licenses, and what it does not
-
-Licensed, for freeze-frame data: pitch-control values from a velocity-free
-model should not be used as probabilities without recalibration; the error is
-systematic, spatially concentrated in the final third, worse for long passes and
-poorly-observed frames, and almost entirely removable by a single global map.
-
-Not licensed: any claim about the published full-tracking models. The
-zero-velocity constraint is severe and its cost is not separable here from the
-model's own defects. Establishing that requires the primary corpus, and the
-present result should be read as motivating that work rather than substituting
-for it.
+The primary design — full tracking, with velocity — has not been run. Section
+6.4 of the paper indicates that incomplete observation explains under half of
+the measured error, but that decomposition is not causal and the velocity
+contribution cannot be separated on freeze-frame data at all. The
+quasi-exogenous identification argument of Section 14 could not be executed,
+because the corpus contains no unchosen arrivals; the selection analysis
+therefore rests on stratification and a sensitivity bound, both reported in
+paper §6.5 with their limits stated.
 
 ---
 
